@@ -87,7 +87,7 @@ const logstyle = StyleSheet.create({
     borderRadius: 10,
   },
   button: {backgroundColor: '#666859', borderRadius: 10, padding: 10, marginBottom: 10},
-  linktext: {color: 'white', fontWeight: 'bold', textAlign: 'center', fontSize: 14},
+  linktext: {color: 'white', fontWeight: 'bold', textAlign: 'center', fontSize: 20},
   newaccount: {color: '#1A3C40', fontWeight: 'bold', textAlign: 'center', paddingTop: 20, fontSize: 20}
 });
 

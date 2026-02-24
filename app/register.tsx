@@ -86,7 +86,7 @@ export default function RegisterScreen() {
 
           <Pressable onPress={() => router.back()}>
             <Text style={registerStyles.back}>
-              <Ionicons name="arrow-back" size={24} color="#1A3C40" />Back to Login</Text>
+              <Ionicons name="arrow-back" size={20} color="#1A3C40" />Back to Login</Text>
           </Pressable>
         </View>
         </ScrollView>
@@ -124,6 +124,6 @@ const registerStyles = StyleSheet.create({
   },
   eye: {padding: 5},
   button: {backgroundColor: '#666859', borderRadius: 10, padding: 10, marginBottom: 10},
-  linktext: { color: 'white', fontWeight: 'bold', textAlign: 'center', fontSize: 14},
-  back: {color: '#1A3C40', fontWeight: 'bold', textAlign: 'center', paddingTop: 20, fontSize: 20},
+  linktext: { color: 'white', fontWeight: 'bold', textAlign: 'center', fontSize: 20},
+  back: {color: '#1A3C40', fontWeight: 'bold', textAlign: 'center', paddingTop: 20, fontSize: 19},
 })
