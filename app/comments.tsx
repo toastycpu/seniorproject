@@ -82,7 +82,6 @@ export default function CommentsScreen() {
             behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
             keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
         >
-
             <View style={styles.header}>
                 <Pressable onPress={() => router.back()} style={styles.backButton}>
                     <Ionicons name="arrow-back" size={24} color="#1A3C40" />
@@ -99,9 +98,9 @@ export default function CommentsScreen() {
                 ListEmptyComponent={
                     <Text style={styles.emptyText}>No comments yet. Be the first!</Text>
                 }
+
                 renderItem={({ item }) => (
                     <View style={styles.commentRow}>
-                        {/* Avatar on the left */}
                         {item.userAvatar ? (
                             <Image source={{ uri: item.userAvatar }} style={styles.commentAvatar} />
                         ) : (
@@ -110,7 +109,6 @@ export default function CommentsScreen() {
                             </View>
                         )}
 
-                        {/* Bubble on the right */}
                         <View style={styles.commentBubble}>
                             <Text style={styles.commentName}>{item.userName}</Text>
                             <Text style={styles.commentText}>{item.text}</Text>
@@ -119,7 +117,6 @@ export default function CommentsScreen() {
                 )}
                 />
 
-            {/* Input Area */}
             <View style={styles.inputContainer}>
                 <TextInput
                     style={styles.input}

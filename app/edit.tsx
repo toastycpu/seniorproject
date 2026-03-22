@@ -53,7 +53,6 @@ export default function EditScreen() {
             Alert.alert('Missing Info', 'Please fill out all fields.');
             return;
         }
-
         setSaving(true);
         console.log("Updating document in database...");
 

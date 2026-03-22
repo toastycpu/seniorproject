@@ -1,6 +1,6 @@
-import {View, Text, Image, StyleSheet, FlatList, Pressable, Dimensions, Alert} from 'react-native';
+import {View, Text, Image, StyleSheet, FlatList, Pressable, Dimensions, RefreshControl} from 'react-native';
 import {useState, useCallback} from 'react';
-import {collection, getDocs, query, orderBy} from 'firebase/firestore';
+import {collection, getDocs, query, orderBy, where} from 'firebase/firestore';
 import {db} from '../../firebase/firebaseConfig';
 import { Ionicons } from '@expo/vector-icons';
 import {useRouter, useFocusEffect} from 'expo-router';
@@ -23,15 +23,28 @@ interface Sale {
     authorName?: string;
     authorAvatar?: string;
     postedDate: string;
+    expiresAt?: any;
+    latitude?: number;
+    longitude?: number;
 }
 
 export default function HomeScreen(){
     const [sales, setSales]= useState<Sale[]>([]);
+    const [refreshing, setRefreshing] = useState(false);
+    const onRefresh = useCallback(async () => {
+        setRefreshing(true);
+        await fetchSales();
+        setRefreshing(false);
+
+    }, []);
+
     const router = useRouter();
 
     const fetchSales = async() => {
         try {
-            const q = query(collection(db, 'sales'), orderBy('createdAt', 'desc'));
+            const now = new Date();
+            const salesRef = collection(db, 'sales');
+            const q = query(salesRef, where('expiresAt', '>', now), orderBy('createdAt', 'asc'));
             const querySnapshot = await getDocs(q);
             
             const salesData: Sale[] = querySnapshot.docs.map((doc)=> ({
@@ -39,7 +52,7 @@ export default function HomeScreen(){
                 ...doc.data(),
             })) as Sale[];
 
-            setSales(salesData);
+            setSales(salesData); 
         } catch (error) {
             console.log("Error fetching sales:", error);
         }
@@ -51,6 +64,24 @@ export default function HomeScreen(){
         }, [])
     );
 
+
+    const getTimeRemaining =(expiresAt: any) =>{
+        if (!expiresAt) return "Permanent";
+
+        const expiry = expiresAt.seconds ? new Date(expiresAt.seconds * 1000) : new Date(expiresAt);
+        const now = new Date();
+        const diffInMins = expiry.getTime() - now.getTime();
+        const diffInHrs = Math.floor(diffInMins / (1000 *60 *60));
+
+        if (diffInHrs > 24){
+            return `${Math.floor(diffInHrs / 24)}d left`;
+        } else if (diffInHrs > 0) {
+            return `${diffInHrs}h left`;
+        }else {
+            return "Ending soon";
+        }
+    };
+
     return (
         <View style={homestyle.container}>
             <View style={homestyle.headercontainer}>
@@ -60,9 +91,12 @@ export default function HomeScreen(){
                 >
                     <Ionicons name="add" size={24} color="white" />
                 </Pressable>
-            </View>
+            </View>    
 
             <FlatList
+                refreshControl={
+                    <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#1A3C40" />
+                }
                 data={sales}
                 keyExtractor={(item) => item.id}
                 showsVerticalScrollIndicator={false}
@@ -79,8 +113,14 @@ export default function HomeScreen(){
                                         <Ionicons name="person" size={20} color="white" />
                                     </View>
                                 )}
-                            <View>
-                                <Text style={homestyle.username}>{item.authorName || 'Anonymous User'}</Text>
+                            <View style={{flex:1}}>
+                                <View style={homestyle.spacebetween}>
+                                    <Text style={homestyle.username}>{item.authorName || 'Anonymous User'}</Text>
+                                    <View style={homestyle.timerBadge}>
+                                        <Ionicons name="time-outline" size={12} color="#1A3C40" />
+                                        <Text style={homestyle.timerText}>{getTimeRemaining(item.expiresAt)}</Text>
+                                    </View>
+                                </View>
                                 <Text style={homestyle.date}>{item.postedDate} | {item.startTime}</Text>
                             </View>
                         </View>
@@ -113,18 +153,39 @@ export default function HomeScreen(){
                                     {item.categories && item.categories[0] ? item.categories[0] : 'Sale'}
                                 </Text>
                             </View>
-                                <Text style={homestyle.address}>{item.address}</Text>
+
+                            <View style={{flexDirection: 'row', alignItems: 'center', marginBottom: 8}}>
+                                <Pressable
+                                    onPress={() => {
+                                        router.push({
+                                            pathname: '/(tabs)/map',
+                                            params: {
+                                                selectedId: item.id,
+                                                lat: item.latitude?.toString(),
+                                                lng: item.longitude?.toString(),
+                                            }
+                                        });
+                                    }}
+                                    style={{paddingRight: 8, paddingVertical: 4}}
+                                >
+                                    <Ionicons name="navigate-outline" size={20} color="#1627ae" style={{marginRight: 4}} />
+                                </Pressable>
+                                <Text style={[homestyle.address, {marginBottom: 0, flex: 1}]}>
+                                    {item.address}
+                                </Text>
+                            </View>
+
                                 <Text style={homestyle.description} >
                                     {item.description}
                                 </Text>
+
+
                                 <View style={homestyle.actionRow}>
-                                    {/* Like Button */}
                                     <Pressable style={homestyle.actionButton}>
                                         <Ionicons name="heart-outline" size={20} color="#1A3C40" />
                                         <Text style={homestyle.actionText}>{item.likes || 0} Likes</Text>
                                     </Pressable>
 
-                                    {/* NEW Comment Button */}
                                     <Pressable 
                                         onPress={() => router.push(`/comments?postId=${item.id}`)} 
                                         style={homestyle.actionButton}
@@ -132,8 +193,7 @@ export default function HomeScreen(){
                                         <Ionicons name="chatbubble-outline" size={20} color="#1A3C40" />
                                         <Text style={homestyle.actionText}>Comment</Text>
                                     </Pressable>
-
-                                    {/* Placeholder Save Button*/}
+                                    
                                     <Pressable style={homestyle.actionButton}>
                                         <Ionicons name="bookmark-outline" size={20} color="#1A3C40" />
                                         <Text style={homestyle.actionText}>Save</Text>
@@ -162,6 +222,8 @@ const homestyle = StyleSheet.create({
         fontWeight: 'bold',
         color: '#1A3C40'
     },
+
+
     button: {
         backgroundColor: '#485b5d', 
         width: 40, height: 40, 
@@ -185,6 +247,8 @@ const homestyle = StyleSheet.create({
         padding: 12,
         alignItems: 'center',
     },
+
+
     avatar: {
         width: 32,
         height: 32,
@@ -244,5 +308,20 @@ const homestyle = StyleSheet.create({
         fontSize: 14,
         color: '#555',
         fontWeight: '500'
+    },
+
+    timerBadge: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#E8F1F2',
+        paddingHorizontal: 8,
+        paddingVertical: 4,
+        borderRadius: 12,
+    },
+    timerText: {
+        fontSize: 10,
+        fontWeight: 'bold',
+        color: '#1A3C40',
+        marginLeft: 4,
     },
 })

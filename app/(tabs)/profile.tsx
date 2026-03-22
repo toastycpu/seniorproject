@@ -21,7 +21,7 @@ export default function ProfileScreen(){
     const router = useRouter();
     const user = auth.currentUser;
     const [myPosts, setMyPosts] = useState<Sale[]>([]);
-    const [profileImage, setProfileImage] = useState<string | null>(null);
+    const [profileImage, setProfileImage] = useState<string | null>(user?.photoURL || null);
 
     const pickProfileImage = async () => {
         let result = await ImagePicker.launchImageLibraryAsync({
