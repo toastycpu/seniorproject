@@ -92,7 +92,7 @@ export default function ProfileScreen(){
     };
 
     const handleEditPost = (id: string) => {
-        router.push(`/edit?Id=${id}`);
+        router.push(`/edit?id=${id}`);
     };
 
     const handleLogout = async () => {

@@ -91,7 +91,14 @@ export default function HomeScreen(){
                 >
                     <Ionicons name="add" size={24} color="white" />
                 </Pressable>
-            </View>    
+            </View>   
+            <Pressable
+                onPress={() => router.push('/search')}
+                style={homestyle.fakeSearchBar}
+            >
+                <Ionicons name="search" size={20} color="#666" style={{ marginRight: 8 }} />
+
+            </Pressable>
 
             <FlatList
                 refreshControl={
@@ -213,7 +220,7 @@ const homestyle = StyleSheet.create({
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
-        paddingHorizontal: 20,
+        paddingHorizontal: 10,
         marginTop: 20,
         marginBottom: 10,
     },
@@ -323,5 +330,15 @@ const homestyle = StyleSheet.create({
         fontWeight: 'bold',
         color: '#1A3C40',
         marginLeft: 4,
+    },
+    fakeSearchBar: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#d0d0d0',
+        marginHorizontal: 20,
+        marginBottom: 15,
+        paddingHorizontal: 15,
+        paddingVertical: 12,
+        borderRadius: 25,
     },
 })

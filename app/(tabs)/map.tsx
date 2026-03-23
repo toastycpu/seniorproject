@@ -1,32 +1,39 @@
 import {View, Text, StyleSheet, ActivityIndicator} from 'react-native';
 import MapView, { Marker } from 'react-native-maps';
-import { useLocalSearchParams } from 'expo-router';
-import { useState, useEffect } from 'react';
-import { collection, getDocs } from 'firebase/firestore';
+import { useLocalSearchParams, useFocusEffect } from 'expo-router';
+import { useState, useCallback } from 'react';
+import { collection, getDocs, query, where } from 'firebase/firestore';
 import { db } from '../../firebase/firebaseConfig';
 
 export default function MapScreen() {
     const [sales, setSales] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
-    const { selectedId, lat, lng } = useLocalSearchParams()
+    const { selectedId, lat, lng } = useLocalSearchParams();
 
-    useEffect(() => {
-        const fetchSales = async () => {
-            try {
-                const querySnapshot = await getDocs(collection(db, 'sales'));
-                const fetchedSales = querySnapshot.docs.map(doc => ({
-                    id: doc.id,
-                    ...doc.data()
-                }));
-                setSales(fetchedSales);
-            } catch (error) {
-                console.error( "error fetching map pins:", error);
-            } finally {
-                setLoading(false);
-            }
-        };
+    useFocusEffect(
+        useCallback(() => {
+            const fetchSales = async () => {
+                setLoading(true);
+                try {
+                    const now = new Date();
+                    const salesRef = collection(db, 'sales');
+                    const q = query(salesRef, where('expiresAt', '>', now));
+
+                    const querySnapshot = await getDocs(q);
+                    const fetchedSales = querySnapshot.docs.map(doc => ({
+                        id: doc.id,
+                        ...doc.data()
+                    }));
+                    setSales(fetchedSales);
+                } catch (error) {
+                    console.error( "error fetching map pins:", error);
+                } finally {
+                    setLoading(false);
+                }
+            };
         fetchSales();
-    }, []);
+        }, [])
+    );
 
     if (loading) {
         return (
