@@ -1,11 +1,13 @@
 //login page
 import {
   View, Text, TextInput, Pressable, StyleSheet,
-  ScrollView, KeyboardAvoidingView, Platform} from 'react-native';
+  ScrollView, KeyboardAvoidingView, Platform, Alert} from 'react-native';
 import { signInWithEmailAndPassword } from 'firebase/auth';
 import {auth} from '../firebase/firebaseConfig';
 import {router} from 'expo-router';
 import {useState} from 'react';
+import { sendPasswordResetEmail } from 'firebase/auth';
+
 
 export default function LoginScreen() {
   const [email, setEmail] = useState('');
@@ -19,6 +21,20 @@ export default function LoginScreen() {
       alert(error.message)
     }
   };
+
+  const handleForgotPassword = async (emailAddress: string) => {
+    if (!emailAddress) {
+      Alert.alert("Missing Email", "Please enter your email addrees first.");
+      return;
+    }
+    try {
+      await sendPasswordResetEmail(auth, emailAddress);
+      Alert.alert("Success", "Check your email for link to rest password");
+    }catch (error: any) {
+      console.log("Error resetting password", error);
+      Alert.alert("Error", error.message)
+    }
+  }
 
   return (
     <View style={logstyle.mainContainer}>
@@ -58,6 +74,11 @@ export default function LoginScreen() {
           <Pressable onPress={() => router.push('/register')}>
             <Text style={logstyle.newaccount}>Create an Account</Text>
           </Pressable>
+
+          <Pressable 
+            onPress={() => handleForgotPassword(email)}>
+            <Text style={logstyle.forgot}>Forgot Password</Text>
+          </Pressable>
         </View>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -88,6 +109,7 @@ const logstyle = StyleSheet.create({
   },
   button: {backgroundColor: '#666859', borderRadius: 10, padding: 10, marginBottom: 10},
   linktext: {color: 'white', fontWeight: 'bold', textAlign: 'center', fontSize: 20},
-  newaccount: {color: '#1A3C40', fontWeight: 'bold', textAlign: 'center', paddingTop: 20, fontSize: 20}
+  newaccount: {color: '#1A3C40', fontWeight: 'bold', textAlign: 'center', paddingTop: 20, fontSize: 25},
+  forgot: {color: '#1A3C40', fontWeight: 'bold', textAlign: 'center', paddingTop: 10, fontSize: 15}
 });
 

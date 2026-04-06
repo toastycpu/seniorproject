@@ -1,9 +1,9 @@
-import {View, Text, Pressable, StyleSheet, FlatList, Image, Alert} from 'react-native';
-import {useCallback, useState} from 'react';
-import {collection, query, where, getDocs, orderBy, deleteDoc, doc} from 'firebase/firestore';
-import {signOut, updateProfile} from 'firebase/auth';
-import {auth, db} from '../../firebase/firebaseConfig';
-import {useFocusEffect, useRouter} from 'expo-router';
+import { View, Text, Pressable, StyleSheet, FlatList, Image, Alert } from 'react-native';
+import { useCallback, useState } from 'react';
+import { collection, query, where, getDocs, orderBy, deleteDoc, doc } from 'firebase/firestore';
+import { signOut, updateProfile } from 'firebase/auth';
+import { auth, db } from '../../firebase/firebaseConfig';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 
@@ -17,11 +17,14 @@ interface Sale {
     description: string;
 }
 
-export default function ProfileScreen(){
+export default function ProfileScreen() {
     const router = useRouter();
     const user = auth.currentUser;
     const [myPosts, setMyPosts] = useState<Sale[]>([]);
     const [profileImage, setProfileImage] = useState<string | null>(user?.photoURL || null);
+
+    const [activeTab, setActiveTab] = useState<'listings' | 'saved'>('listings');
+    const [savedPosts, setSavedPosts] = useState<Sale[]>([]);
 
     const pickProfileImage = async () => {
         let result = await ImagePicker.launchImageLibraryAsync({
@@ -63,9 +66,30 @@ export default function ProfileScreen(){
         }
     };
 
-    useFocusEffect( useCallback(() => {
+    const fetchSavedPosts = async () => {
+        if (!auth.currentUser) return;
+        
+        try {
+            const userId = auth.currentUser.uid;
+            const salesRef = collection(db, 'sales');
+            const q = query(salesRef, where('savedBy', 'array-contains', userId));
+            
+            const querySnapshot = await getDocs(q);
+            const savedData = querySnapshot.docs.map((doc) => ({
+                id: doc.id,
+                ...doc.data(),
+            })) as Sale[];
+            setSavedPosts(savedData); 
+            
+        } catch (error) {
+            console.log("Error fetching saved posts:", error);
+        }
+    };
+
+    useFocusEffect(useCallback(() => {
         fetchMyPosts();
-    }, []) 
+        fetchSavedPosts();
+    }, [])
     );
 
     const handleDeletePost = (id: string) => {
@@ -74,8 +98,8 @@ export default function ProfileScreen(){
             "Are you sure you want to delete this post? This cannot be undone.",
             [
                 { text: "Cancel", style: "cancel" },
-                { 
-                    text: "Delete", 
+                {
+                    text: "Delete",
                     style: "destructive",
                     onPress: async () => {
                         try {
@@ -92,7 +116,7 @@ export default function ProfileScreen(){
     };
 
     const handleEditPost = (id: string) => {
-        router.push(`/edit?id=${id}`);
+        router.push({ pathname: '/create', params: { id: id } });
     };
 
     const handleLogout = async () => {
@@ -103,7 +127,6 @@ export default function ProfileScreen(){
     const ProfileHeader = () => (
         <View style={Profilestyle.headerContainer}>
             <Text style={Profilestyle.screenTitle}>Profile</Text>
-            
             <Pressable onPress={pickProfileImage} style={Profilestyle.avatarContainer}>
                 <View style={Profilestyle.avatar}>
                     {profileImage ? (
@@ -118,50 +141,73 @@ export default function ProfileScreen(){
                     <Ionicons name="camera" size={14} color="white" />
                 </View>
             </Pressable>
-            
+
             <Text style={Profilestyle.name}>
                 {user?.displayName || "User"}
             </Text>
             <Text style={Profilestyle.email}>{user?.email}</Text>
-
             <View style={Profilestyle.statsContainer}>
                 <Text style={Profilestyle.statNumber}>{myPosts.length}</Text>
                 <Text style={Profilestyle.statLabel}>Active Posts</Text>
             </View>
-
             <Pressable style={Profilestyle.logoutButton} onPress={handleLogout}>
                 <Text style={Profilestyle.logoutText}>Log Out</Text>
             </Pressable>
 
             <View style={Profilestyle.divider} />
-            <Text style={Profilestyle.sectionTitle}>My Listings</Text>
+            <View style={Profilestyle.tabContainer}>
+                <Pressable 
+                    style={[Profilestyle.tabButton, activeTab === 'listings' && Profilestyle.activeTab]}
+                    onPress={() => setActiveTab('listings')}
+                >
+                    <Ionicons name="grid-outline" size={20} color={activeTab === 'listings' ? '#1A3C40' : '#888'} />
+                    <Text style={[Profilestyle.tabText, activeTab === 'listings' && Profilestyle.activeTabText]}>
+                        My Listings
+                    </Text>
+                </Pressable>
+
+                <Pressable 
+                    style={[Profilestyle.tabButton, activeTab === 'saved' && Profilestyle.activeTab]}
+                    onPress={() => setActiveTab('saved')}
+                >
+                    <Ionicons name="bookmark-outline" size={20} color={activeTab === 'saved' ? '#1A3C40' : '#888'} />
+                    <Text style={[Profilestyle.tabText, activeTab === 'saved' && Profilestyle.activeTabText]}>
+                        Saved
+                    </Text>
+                </Pressable>
+            </View>
         </View>
     );
 
     return (
         <View style={Profilestyle.container}>
             <FlatList
-                data={myPosts}
+                data={activeTab === 'listings' ? myPosts : savedPosts}
                 keyExtractor={(item) => item.id}
                 ListHeaderComponent={ProfileHeader}
                 contentContainerStyle={{ paddingBottom: 40 }}
                 showsVerticalScrollIndicator={false}
                 ListEmptyComponent={
-                    <Text style={Profilestyle.emptyText}>You haven't posted anything yet.</Text>
+                    <Text style={Profilestyle.emptyText}>
+                        {activeTab === 'listings' 
+                            ? "You haven't posted anything yet." 
+                            : "You haven't saved any posts yet."}
+                    </Text>
                 }
                 renderItem={({ item }) => (
                     <View style={Profilestyle.card}>
-                        <Image 
-                            source={{ uri: item.images && item.images.length > 0 ? item.images[0] : item.image }} 
-                            style={Profilestyle.image} 
+                        <Image
+                            source={{ uri: item.images && item.images.length > 0 ? item.images[0] : item.image }}
+                            style={Profilestyle.image}
                         />
                         <View style={Profilestyle.cardContent}>
                             <View style={Profilestyle.titleRow}>
-                                    <View style={{ flex: 1, paddingRight: 10 }}>
-                                        <Text style={Profilestyle.cardTitle}>{item.title}</Text>
-                                        <Text style={Profilestyle.cardAddress}>{item.address}</Text>
-                                    </View>
-                                    
+                                <View style={{ flex: 1, paddingRight: 10 }}>
+                                    <Text style={Profilestyle.cardTitle}>{item.title}</Text>
+                                    <Text style={Profilestyle.cardAddress}>{item.address}</Text>
+                                </View>
+
+                                {activeTab === 'listings' && (
                                     <View style={Profilestyle.editDeleteContainer}>
                                         <Pressable onPress={() => handleEditPost(item.id)} style={{ marginRight: 15 }}>
                                             <Ionicons name="pencil" size={20} color="#4CAF50" />
@@ -170,6 +216,7 @@ export default function ProfileScreen(){
                                             <Ionicons name="trash-outline" size={20} color="#ff4444" />
                                         </Pressable>
                                     </View>
+                                )}
                             </View>
                             <View style={Profilestyle.actionRow}>
                                 <View style={{ flexDirection: 'row', alignItems: 'center' }}>
@@ -177,8 +224,8 @@ export default function ProfileScreen(){
                                         <Ionicons name="heart-outline" size={23} color="#1A3C40" />
                                         <Text style={Profilestyle.actionText}>{item.likes || 0}</Text>
                                     </View>
-                                    <Pressable 
-                                        onPress={() => router.push(`/comments?postId=${item.id}`)} 
+                                    <Pressable
+                                        onPress={() => router.push(`/comments?postId=${item.id}`)}
                                         style={{ flexDirection: 'row', alignItems: 'center', marginLeft: 15 }}
                                     >
                                         <Ionicons name="chatbubble-outline" size={20} color="#1A3C40" />
@@ -206,12 +253,12 @@ const Profilestyle = StyleSheet.create({
     },
 
     avatarContainer: { position: 'relative', marginBottom: 15 },
-    avatar: { 
-        width: 100, 
-        height: 100, 
-        borderRadius: 50, 
-        backgroundColor: '#1A3C40', 
-        justifyContent: 'center', 
+    avatar: {
+        width: 100,
+        height: 100,
+        borderRadius: 50,
+        backgroundColor: '#1A3C40',
+        justifyContent: 'center',
         alignItems: 'center',
         overflow: 'hidden'
     },
@@ -232,33 +279,42 @@ const Profilestyle = StyleSheet.create({
         borderColor: '#f4f4f4'
     },
     email: { fontSize: 14, color: '#666', marginBottom: 15 },
-    
+
     statsContainer: { alignItems: 'center', marginBottom: 20 },
     statNumber: { fontSize: 20, fontWeight: 'bold', color: '#1A3C40' },
     statLabel: { fontSize: 14, color: '#666' },
 
-    logoutButton: { 
-        backgroundColor: '#ffebee', 
-        paddingVertical: 10, 
-        paddingHorizontal: 20, 
-        borderRadius: 20, 
-        marginBottom: 20 
+    logoutButton: {
+        backgroundColor: '#ffebee',
+        paddingVertical: 10,
+        paddingHorizontal: 20,
+        borderRadius: 20,
+        marginBottom: 20
     },
     logoutText: { color: '#d32f2f', fontWeight: '600' },
-    divider: { height: 1, width: '100%', backgroundColor: '#ddd', marginBottom: 20 },
-    sectionTitle: { 
-        fontSize: 18, 
-        fontWeight: 'bold', 
-        alignSelf: 'flex-start', 
-        marginBottom: 10, color: '#333' 
+    divider: { height: 1, width: '100%', backgroundColor: '#ddd', marginBottom: 5 },
+    
+    // NEW TAB STYLES
+    tabContainer: { flexDirection: 'row', width: '100%', marginBottom: 15 },
+    tabButton: { 
+        flex: 1, 
+        flexDirection: 'row', 
+        justifyContent: 'center', 
+        alignItems: 'center', 
+        paddingVertical: 12, 
+        borderBottomWidth: 2, 
+        borderBottomColor: 'transparent' 
     },
+    activeTab: { borderBottomColor: '#1A3C40' },
+    tabText: { fontSize: 16, fontWeight: '600', color: '#888', marginLeft: 8 },
+    activeTabText: { color: '#1A3C40' },
 
     card: {
         backgroundColor: 'white',
-        borderRadius: 12, 
-        marginBottom: 15, 
-        marginHorizontal: 20, 
-        overflow: 'hidden', 
+        borderRadius: 12,
+        marginBottom: 15,
+        marginHorizontal: 20,
+        overflow: 'hidden',
         elevation: 2
     },
     image: { width: '100%', height: 150 },
@@ -267,16 +323,16 @@ const Profilestyle = StyleSheet.create({
     cardAddress: { fontSize: 14, color: '#666', marginVertical: 4 },
 
     actionRow: {
-        flexDirection: 'row', 
-        justifyContent: 'space-between', 
-        alignItems: 'center', 
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
         marginTop: 15,
         borderTopWidth: 1,
         borderTopColor: '#f0f0f0',
         paddingTop: 15
     },
-    likesContainer: {flexDirection: 'row', alignItems: 'center', marginLeft: 5},
+    likesContainer: { flexDirection: 'row', alignItems: 'center', marginLeft: 5 },
     actionText: { marginLeft: 5, color: '#555' },
-    editDeleteContainer: { flexDirection: 'row', alignItems: 'center', paddingLeft: 30},
+    editDeleteContainer: { flexDirection: 'row', alignItems: 'center', paddingLeft: 30 },
     emptyText: { textAlign: 'center', marginTop: 20, color: '#888', fontStyle: 'italic' },
 });

@@ -1,7 +1,7 @@
-import {View, Text, Image, StyleSheet, FlatList, Pressable, Dimensions, RefreshControl} from 'react-native';
+import {View, Text, Image, StyleSheet, FlatList, Pressable, Dimensions, RefreshControl, Alert} from 'react-native';
 import {useState, useCallback} from 'react';
-import {collection, getDocs, query, orderBy, where} from 'firebase/firestore';
-import {db} from '../../firebase/firebaseConfig';
+import {collection, getDocs, query, orderBy, where, doc, updateDoc, arrayUnion, arrayRemove, increment} from 'firebase/firestore';
+import {db, auth} from '../../firebase/firebaseConfig';
 import { Ionicons } from '@expo/vector-icons';
 import {useRouter, useFocusEffect} from 'expo-router';
 
@@ -13,7 +13,6 @@ interface Sale {
     title: string;
     address: string;
     description: string;
-    categories: string[];
     startTime: string;
     endTime: string;
     image?: string;
@@ -26,16 +25,18 @@ interface Sale {
     expiresAt?: any;
     latitude?: number;
     longitude?: number;
+    savedBy?: string[];
+    likedBy?: string[];
 }
 
 export default function HomeScreen(){
     const [sales, setSales]= useState<Sale[]>([]);
     const [refreshing, setRefreshing] = useState(false);
+    
     const onRefresh = useCallback(async () => {
         setRefreshing(true);
         await fetchSales();
         setRefreshing(false);
-
     }, []);
 
     const router = useRouter();
@@ -55,6 +56,79 @@ export default function HomeScreen(){
             setSales(salesData); 
         } catch (error) {
             console.log("Error fetching sales:", error);
+        }
+    };
+
+    const handleSave = async (post:Sale) => {
+        if (!auth.currentUser) {
+            Alert.alert("Not logged in", "You must be logged in to save post");
+            return;
+        }
+        const userId = auth.currentUser.uid;
+        const isSaved = post.savedBy?.includes(userId);
+        const postRef = doc(db, 'sales', post.id);
+
+        try {
+            setSales((currentSales) =>
+                currentSales.map((p) => {
+                    if (p.id === post.id) {
+                        const newSavedBy = isSaved
+                            ? (p.savedBy || []).filter(id => id !== userId)
+                            : [...(p.savedBy || []), userId];
+                        return { ...p, savedBy: newSavedBy };
+                    }
+                    return p;
+                })
+            );
+            await updateDoc(postRef, {
+                savedBy: isSaved ? arrayRemove(userId) : arrayUnion(userId)
+            });
+
+        } catch (error) {
+            console.log("Error toggling save:", error);
+            Alert.alert("Error", "Could not save the post. Please try again.");
+        }
+    };
+
+    const handleLike = async (post: Sale) => {
+        if (!auth.currentUser) {
+            Alert.alert("Not logged in", "You must be logged in to like a post.");
+            return;
+        }
+        const userId = auth.currentUser.uid;
+
+        if (post.postedBy === userId) {
+            return;
+        }
+
+        const isLiked = post.likedBy?.includes(userId);
+        const postRef = doc(db, 'sales', post.id);
+
+        try {
+            setSales((currentSales) =>
+                currentSales.map((p) => {
+                    if (p.id === post.id) {
+                        const newLikedBy = isLiked
+                            ? (p.likedBy || []).filter(id => id !== userId)
+                            : [...(p.likedBy || []), userId];
+                        
+                        const newLikesCount = isLiked 
+                            ? Math.max(0, (p.likes || 0) - 1) 
+                            : (p.likes || 0) + 1;
+
+                        return { ...p, likedBy: newLikedBy, likes: newLikesCount };
+                    }
+                    return p;
+                })
+            );
+            await updateDoc(postRef, {
+                likedBy: isLiked ? arrayRemove(userId) : arrayUnion(userId),
+                likes: isLiked ? increment(-1) : increment(1)
+            });
+
+        } catch (error) {
+            console.log("Error toggling like:", error);
+            Alert.alert("Error", "Could not like the post. Please try again.");
         }
     };
 
@@ -107,108 +181,131 @@ export default function HomeScreen(){
                 data={sales}
                 keyExtractor={(item) => item.id}
                 showsVerticalScrollIndicator={false}
-                renderItem={({item}) => (
-                    <View style={homestyle.card}>
-                        <View style={homestyle.cardHeader}>
-                            {item.authorAvatar ? (
-                                    <Image 
-                                        source={{ uri: item.authorAvatar }} 
-                                        style={homestyle.avatar} 
-                                    />
-                                ) : (
-                                    <View style={[homestyle.avatar, { justifyContent: 'center', alignItems: 'center', backgroundColor: '#ccc' }]}>
-                                        <Ionicons name="person" size={20} color="white" />
+                renderItem={({item}) => {
+                    const isSavedByCurrentUser = item.savedBy?.includes(auth.currentUser?.uid || '');
+                    const isLikedByCurrentUser = item.likedBy?.includes(auth.currentUser?.uid || '');
+                    const isOwnPost = item.postedBy === auth.currentUser?.uid;
+
+                    return (
+                        <View style={homestyle.card}>
+                            <View style={homestyle.cardHeader}>
+                                {item.authorAvatar ? (
+                                        <Image 
+                                            source={{ uri: item.authorAvatar }} 
+                                            style={homestyle.avatar} 
+                                        />
+                                    ) : (
+                                        <View style={[homestyle.avatar, { justifyContent: 'center', alignItems: 'center', backgroundColor: '#ccc' }]}>
+                                            <Ionicons name="person" size={20} color="white" />
+                                        </View>
+                                    )}
+                                <View style={{flex:1}}>
+                                    <View style={homestyle.spacebetween}>
+                                        <Text style={homestyle.username}>{item.authorName || 'Anonymous User'}</Text>
+                                        <View style={homestyle.timerBadge}>
+                                            <Ionicons name="time-outline" size={12} color="#1A3C40" />
+                                            <Text style={homestyle.timerText}>{getTimeRemaining(item.expiresAt)}</Text>
+                                        </View>
                                     </View>
-                                )}
-                            <View style={{flex:1}}>
-                                <View style={homestyle.spacebetween}>
-                                    <Text style={homestyle.username}>{item.authorName || 'Anonymous User'}</Text>
-                                    <View style={homestyle.timerBadge}>
-                                        <Ionicons name="time-outline" size={12} color="#1A3C40" />
-                                        <Text style={homestyle.timerText}>{getTimeRemaining(item.expiresAt)}</Text>
-                                    </View>
+                                    <Text style={homestyle.date}>{item.postedDate} | {item.startTime} : {item.endTime}</Text>
                                 </View>
-                                <Text style={homestyle.date}>{item.postedDate} | {item.startTime}</Text>
-                            </View>
-                        </View>
-
-                        {item.images && item.images.length > 0 ? (
-                            <FlatList 
-                                data={item.images}
-                                horizontal
-                                pagingEnabled
-                                showsHorizontalScrollIndicator={false}
-                                keyExtractor={(imgUri, index) => index.toString()}
-                                renderItem={({ item: imgUri }) => (
-                                    <Image 
-                                        source={{ uri: imgUri }} 
-                                        style={[homestyle.image, { width: imageWidth }]} 
-                                    />
-                                )}
-                            />
-                        ) : (
-                            <Image 
-                                source={{ uri: item.image }} 
-                                style={[homestyle.image, { width: imageWidth }]} 
-                            />
-                        )}
-
-                        <View style={homestyle.cardContent}>
-                            <View style={homestyle.spacebetween}>
-                                <Text style={homestyle.title}>{item.title}</Text>
-                                <Text style={homestyle.categoryTag}>
-                                    {item.categories && item.categories[0] ? item.categories[0] : 'Sale'}
-                                </Text>
                             </View>
 
-                            <View style={{flexDirection: 'row', alignItems: 'center', marginBottom: 8}}>
-                                <Pressable
-                                    onPress={() => {
-                                        router.push({
-                                            pathname: '/(tabs)/map',
-                                            params: {
-                                                selectedId: item.id,
-                                                lat: item.latitude?.toString(),
-                                                lng: item.longitude?.toString(),
-                                            }
-                                        });
-                                    }}
-                                    style={{paddingRight: 8, paddingVertical: 4}}
-                                >
-                                    <Ionicons name="navigate-outline" size={20} color="#1627ae" style={{marginRight: 4}} />
-                                </Pressable>
-                                <Text style={[homestyle.address, {marginBottom: 0, flex: 1}]}>
-                                    {item.address}
-                                </Text>
-                            </View>
+                            {item.images && item.images.length > 0 ? (
+                                <FlatList 
+                                    data={item.images}
+                                    horizontal
+                                    pagingEnabled
+                                    showsHorizontalScrollIndicator={false}
+                                    keyExtractor={(imgUri, index) => index.toString()}
+                                    renderItem={({ item: imgUri }) => (
+                                        <Image 
+                                            source={{ uri: imgUri }} 
+                                            style={[homestyle.image, { width: imageWidth }]} 
+                                        />
+                                    )}
+                                />
+                            ) : (
+                                <Image 
+                                    source={{ uri: item.image }} 
+                                    style={[homestyle.image, { width: imageWidth }]} 
+                                />
+                            )}
 
-                                <Text style={homestyle.description} >
-                                    {item.description}
-                                </Text>
+                            <View style={homestyle.cardContent}>
+                                <Text style={[homestyle.title, { marginBottom: 5 }]}>{item.title}</Text>
 
-
-                                <View style={homestyle.actionRow}>
-                                    <Pressable style={homestyle.actionButton}>
-                                        <Ionicons name="heart-outline" size={20} color="#1A3C40" />
-                                        <Text style={homestyle.actionText}>{item.likes || 0} Likes</Text>
-                                    </Pressable>
-
-                                    <Pressable 
-                                        onPress={() => router.push(`/comments?postId=${item.id}`)} 
-                                        style={homestyle.actionButton}
+                                <View style={{flexDirection: 'row', alignItems: 'center', marginBottom: 8}}>
+                                    <Pressable
+                                        onPress={() => {
+                                            router.push({
+                                                pathname: '/(tabs)/map',
+                                                params: {
+                                                    selectedId: item.id,
+                                                    lat: item.latitude?.toString(),
+                                                    lng: item.longitude?.toString(),
+                                                }
+                                            });
+                                        }}
+                                        style={{paddingRight: 8, paddingVertical: 4}}
                                     >
-                                        <Ionicons name="chatbubble-outline" size={20} color="#1A3C40" />
-                                        <Text style={homestyle.actionText}>Comment</Text>
+                                        <Ionicons name="navigate-outline" size={20} color="#1627ae" style={{marginRight: 4}} />
                                     </Pressable>
-                                    
-                                    <Pressable style={homestyle.actionButton}>
-                                        <Ionicons name="bookmark-outline" size={20} color="#1A3C40" />
-                                        <Text style={homestyle.actionText}>Save</Text>
-                                    </Pressable>
+                                    <Text style={[homestyle.address, {marginBottom: 0, flex: 1}]}>
+                                        {item.address}
+                                    </Text>
+                                </View>
+                                    <Text style={homestyle.description} >
+                                        {item.description}
+                                    </Text>
+
+
+                                    <View style={homestyle.actionRow}>
+                                    <Pressable 
+                                            style={homestyle.actionButton}
+                                            onPress={() => handleLike(item)}
+                                        >
+                                            <Ionicons 
+                                                name={isLikedByCurrentUser ? "heart" : "heart-outline"} 
+                                                size={20} 
+                                                color={isLikedByCurrentUser ? "#e74c3c" : "#1A3C40"} 
+                                            />
+                                            <Text style={[
+                                                homestyle.actionText,
+                                                isLikedByCurrentUser && { color: '#e74c3c', fontWeight: 'bold' }
+                                            ]}>
+                                                {item.likes || 0}
+                                            </Text>
+                                        </Pressable>
+                                        <Pressable 
+                                            onPress={() => router.push(`/comments?postId=${item.id}`)} 
+                                            style={homestyle.actionButton}
+                                        >
+                                            <Ionicons name="chatbubble-outline" size={20} color="#1A3C40" />
+                                            <Text style={homestyle.actionText}>Comment</Text>
+                                        </Pressable>
+                                        <Pressable 
+                                            style={homestyle.actionButton}
+                                            onPress={() => handleSave(item)}
+                                            
+                                            >
+                                            <Ionicons 
+                                                name={isSavedByCurrentUser ? "bookmark" : "bookmark-outline"} 
+                                                size={20} 
+                                                color={isSavedByCurrentUser ? "#1A3C40" : "#555"}
+                                            />
+                                            <Text style={[
+                                                homestyle.actionText,
+                                                isSavedByCurrentUser && {color: '#1A3C40', fontWeight: 'bold' }
+                                            ]}>
+                                                {isSavedByCurrentUser ? "Saved" : "Save"}
+                                            </Text>
+                                        </Pressable>
+                                    </View>
                             </View>
-                        </View>
-                    </View>
-                )}
+                        </View> 
+                    );
+                }}
             />
         </View>
     );
@@ -242,12 +339,11 @@ const homestyle = StyleSheet.create({
         backgroundColor: 'white',
         borderRadius: 10,
         marginBottom: 15,
-        overflow: 'hidden',
-        elevation: 3,
+        elevation: 4,
         shadowColor: '#000',
-        shadowOffset: {width: 0, height: 2},
-        shadowOpacity: 0.1,
-        shadowRadius: 4,
+        shadowOffset: {width: 0, height: 5},
+        shadowOpacity: 0.15,
+        shadowRadius: 5,
     },
     cardHeader: {
         flexDirection: 'row',
@@ -280,10 +376,6 @@ const homestyle = StyleSheet.create({
         fontSize: 20,
         fontWeight: 'bold',
         color: '#1a2640'
-    },
-    categoryTag:{
-        backgroundColor: '#e0f2f1', color:'#1A3C40', paddingHorizontal: 8,
-        borderRadius: 4, fontSize: 12, textAlignVertical: 'center',
     },
     address: {
         fontWeight: '400',
@@ -341,4 +433,4 @@ const homestyle = StyleSheet.create({
         paddingVertical: 12,
         borderRadius: 25,
     },
-})
+});
