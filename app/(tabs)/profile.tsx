@@ -1,6 +1,6 @@
 import { View, Text, Pressable, StyleSheet, FlatList, Image, Alert } from 'react-native';
 import { useCallback, useState } from 'react';
-import { collection, query, where, getDocs, orderBy, deleteDoc, doc } from 'firebase/firestore';
+import { collection, query, where, getDocs, orderBy, deleteDoc, doc, updateDoc, arrayRemove } from 'firebase/firestore';
 import { signOut, updateProfile } from 'firebase/auth';
 import { auth, db } from '../../firebase/firebaseConfig';
 import { useFocusEffect, useRouter } from 'expo-router';
@@ -15,6 +15,7 @@ interface Sale {
     images?: string[];
     likes: number;
     description: string;
+    expiresAt?: any;
 }
 
 export default function ProfileScreen() {
@@ -124,6 +125,20 @@ export default function ProfileScreen() {
         router.replace('/');
     };
 
+    const handleRemoveSaved = async (id: string) => {
+        if (!user) return;
+        try{
+            const postRef = doc(db, 'sales', id);
+            await updateDoc(postRef, {
+                savedBy: arrayRemove(user.uid)
+            });
+            setSavedPosts(prevPosts => prevPosts.filter(post => post.id !== id));
+        }catch (error) {
+            console.log("Error removing saved post:", error);
+            Alert.alert("Error", "Could not remove from saved list");
+        }
+    };
+
     const ProfileHeader = () => (
         <View style={Profilestyle.headerContainer}>
             <Text style={Profilestyle.screenTitle}>Profile</Text>
@@ -194,48 +209,74 @@ export default function ProfileScreen() {
                             : "You haven't saved any posts yet."}
                     </Text>
                 }
-                renderItem={({ item }) => (
-                    <View style={Profilestyle.card}>
-                        <Image
-                            source={{ uri: item.images && item.images.length > 0 ? item.images[0] : item.image }}
-                            style={Profilestyle.image}
-                        />
-                        <View style={Profilestyle.cardContent}>
-                            <View style={Profilestyle.titleRow}>
-                                <View style={{ flex: 1, paddingRight: 10 }}>
-                                    <Text style={Profilestyle.cardTitle}>{item.title}</Text>
-                                    <Text style={Profilestyle.cardAddress}>{item.address}</Text>
+                renderItem={({ item }) => {
+                    const isExpired = item.expiresAt && (
+                        item.expiresAt.seconds 
+                            ? new Date(item.expiresAt.seconds * 1000) 
+                            : new Date(item.expiresAt)
+                    ) < new Date();
+
+                    return (
+                        <View style={[Profilestyle.card, isExpired && { opacity: 0.7 }]}>
+                            <Image
+                                source={{ uri: item.images && item.images.length > 0 ? item.images[0] : item.image }}
+                                style={Profilestyle.image}
+                            />
+                            <View style={Profilestyle.cardContent}>
+                                <View style={Profilestyle.titleRow}>
+                                    <View style={{ flex: 1, paddingRight: 10 }}>
+                                        <Text style={Profilestyle.cardTitle}>{item.title}</Text>
+                                        <Text style={Profilestyle.cardAddress}>{item.address}</Text>
+                                        
+
+                                        {isExpired && (
+                                            <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}>
+                                                <Ionicons name="warning" size={16} color="#d32f2f" style={{ marginRight: 4 }} />
+                                                <Text style={{ color: '#d32f2f', fontWeight: 'bold' }}>
+                                                    This post has expired
+                                                </Text>
+                                            </View>
+                                        )}
+                                    </View>
+                                    {activeTab === 'listings' && (
+                                        <View style={Profilestyle.editDeleteContainer}>
+                                            <Pressable onPress={() => handleEditPost(item.id)} style={{ marginRight: 15 }}>
+                                                <Ionicons name="pencil" size={20} color="#4CAF50" />
+                                            </Pressable>
+                                            <Pressable onPress={() => handleDeletePost(item.id)}>
+                                                <Ionicons name="trash-outline" size={20} color="#ff4444" />
+                                            </Pressable>
+                                        </View>
+                                    )}
+                                    {activeTab === 'saved' && (
+                                        <View style={Profilestyle.editDeleteContainer}>
+                                            <Pressable onPress={() => handleRemoveSaved(item.id)}>
+                                                <Ionicons name="bookmark" size={24} color="#1A3C40" />
+                                            </Pressable>
+                                        </View>
+                                    )}
                                 </View>
 
-                                {activeTab === 'listings' && (
-                                    <View style={Profilestyle.editDeleteContainer}>
-                                        <Pressable onPress={() => handleEditPost(item.id)} style={{ marginRight: 15 }}>
-                                            <Ionicons name="pencil" size={20} color="#4CAF50" />
-                                        </Pressable>
-                                        <Pressable onPress={() => handleDeletePost(item.id)}>
-                                            <Ionicons name="trash-outline" size={20} color="#ff4444" />
+                                
+                                <View style={Profilestyle.actionRow}>
+                                    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                                        <View style={Profilestyle.likesContainer}>
+                                            <Ionicons name="heart-outline" size={23} color="#1A3C40" />
+                                            <Text style={Profilestyle.actionText}>{item.likes || 0}</Text>
+                                        </View>
+                                        <Pressable
+                                            onPress={() => router.push(`/comments?postId=${item.id}`)}
+                                            style={{ flexDirection: 'row', alignItems: 'center', marginLeft: 15 }}
+                                        >
+                                            <Ionicons name="chatbubble-outline" size={20} color="#1A3C40" />
+                                            <Text style={Profilestyle.actionText}>Comment</Text>
                                         </Pressable>
                                     </View>
-                                )}
-                            </View>
-                            <View style={Profilestyle.actionRow}>
-                                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                                    <View style={Profilestyle.likesContainer}>
-                                        <Ionicons name="heart-outline" size={23} color="#1A3C40" />
-                                        <Text style={Profilestyle.actionText}>{item.likes || 0}</Text>
-                                    </View>
-                                    <Pressable
-                                        onPress={() => router.push(`/comments?postId=${item.id}`)}
-                                        style={{ flexDirection: 'row', alignItems: 'center', marginLeft: 15 }}
-                                    >
-                                        <Ionicons name="chatbubble-outline" size={20} color="#1A3C40" />
-                                        <Text style={Profilestyle.actionText}>Comment</Text>
-                                    </Pressable>
                                 </View>
                             </View>
                         </View>
-                    </View>
-                )}
+                    );
+                }}
             />
         </View>
     );
@@ -294,7 +335,7 @@ const Profilestyle = StyleSheet.create({
     logoutText: { color: '#d32f2f', fontWeight: '600' },
     divider: { height: 1, width: '100%', backgroundColor: '#ddd', marginBottom: 5 },
     
-    // NEW TAB STYLES
+
     tabContainer: { flexDirection: 'row', width: '100%', marginBottom: 15 },
     tabButton: { 
         flex: 1, 
