@@ -1,87 +1,98 @@
 //login page
 import {
   View, Text, TextInput, Pressable, StyleSheet,
-  ScrollView, KeyboardAvoidingView, Platform, Alert} from 'react-native';
+  ScrollView, KeyboardAvoidingView, Platform, Alert
+} from 'react-native';
 import { signInWithEmailAndPassword } from 'firebase/auth';
-import {auth} from '../firebase/firebaseConfig';
-import {router} from 'expo-router';
-import {useState} from 'react';
+import { auth } from '../firebase/firebaseConfig';
+import { router } from 'expo-router';
+import { useState } from 'react';
 import { sendPasswordResetEmail } from 'firebase/auth';
 
 
 export default function LoginScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  
+
   const handleLogin = async () => {
     try {
       await signInWithEmailAndPassword(auth, email, password);
       router.replace('/home');
-    }catch (error:any) {
+    } catch (error: any) {
       alert(error.message)
     }
   };
 
   const handleForgotPassword = async (emailAddress: string) => {
     if (!emailAddress) {
-      Alert.alert("Missing Email", "Please enter your email addrees first.");
+      Alert.alert("Missing Email", "Please enter your email address first.");
       return;
     }
     try {
       await sendPasswordResetEmail(auth, emailAddress);
-      Alert.alert("Success", "Check your email for link to rest password");
-    }catch (error: any) {
+      Alert.alert("Success", "Check your email for a link to reset your password.");
+    } catch (error: any) {
       console.log("Error resetting password", error);
-      Alert.alert("Error", error.message)
+
+      if (error.code === 'auth/user-not-found') {
+        Alert.alert(
+          "Account Not Found",
+          "We couldn't find an account with that email. Please create an account first."
+        );
+      } else if (error.code === 'auth/invalid-email') {
+        Alert.alert("Invalid Email", "Please enter a valid email address.");
+      } else {
+        Alert.alert("Error", error.message);
+      }
     }
   }
 
   return (
     <View style={logstyle.mainContainer}>
-    <KeyboardAvoidingView 
-      style={{ flex: 1, backgroundColor: '#eeeeee'}} 
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-    >
-      <ScrollView
-        style={{backgroundColor: '#eeeeee'}}
-        contentContainerStyle={logstyle.scrollContainer} 
-        keyboardShouldPersistTaps="handled"
+      <KeyboardAvoidingView
+        style={{ flex: 1, backgroundColor: '#eeeeee' }}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
-        <View style={logstyle.container}>
-          <Text style={logstyle.title}>ReFind</Text>
-          <Text style={logstyle.subtitle}>Your next Treasure</Text>
+        <ScrollView
+          style={{ backgroundColor: '#eeeeee' }}
+          contentContainerStyle={logstyle.scrollContainer}
+          keyboardShouldPersistTaps="handled"
+        >
+          <View style={logstyle.container}>
+            <Text style={logstyle.title}>ReFind</Text>
+            <Text style={logstyle.subtitle}>Your next Treasure</Text>
 
-          <TextInput
-            placeholder="Email"
-            style={logstyle.input}
-            onChangeText={setEmail}
-            value={email}
-            autoCapitalize="none"
-          />
+            <TextInput
+              placeholder="Email"
+              style={logstyle.input}
+              onChangeText={setEmail}
+              value={email}
+              autoCapitalize="none"
+            />
 
-          <TextInput
-            placeholder="Password"
-            style={logstyle.input}
-            onChangeText={setPassword}
-            value={password}
-            secureTextEntry
-          />
+            <TextInput
+              placeholder="Password"
+              style={logstyle.input}
+              onChangeText={setPassword}
+              value={password}
+              secureTextEntry
+            />
 
-          <Pressable style={logstyle.button} onPress={handleLogin}>
-            <Text style={logstyle.linktext}>Login</Text>
-          </Pressable>
+            <Pressable style={logstyle.button} onPress={handleLogin}>
+              <Text style={logstyle.linktext}>Login</Text>
+            </Pressable>
 
-          <Pressable onPress={() => router.push('/register')}>
-            <Text style={logstyle.newaccount}>Create an Account</Text>
-          </Pressable>
+            <Pressable onPress={() => router.push('/register')}>
+              <Text style={logstyle.newaccount}>Create an Account</Text>
+            </Pressable>
 
-          <Pressable 
-            onPress={() => handleForgotPassword(email)}>
-            <Text style={logstyle.forgot}>Forgot Password</Text>
-          </Pressable>
-        </View>
-      </ScrollView>
-    </KeyboardAvoidingView>
+            <Pressable
+              onPress={() => handleForgotPassword(email)}>
+              <Text style={logstyle.forgot}>Forgot Password</Text>
+            </Pressable>
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </View>
   );
 }
@@ -95,11 +106,12 @@ const logstyle = StyleSheet.create({
     flexGrow: 1,
     justifyContent: 'center',
   },
-  container: {  
+  container: {
     padding: 20,
-    width: '100%',},
-  title: { fontSize: 50, textAlign: 'center', fontWeight: 'bold', color:'#666859'},
-  subtitle:{ fontSize: 18, textAlign: 'center', marginBottom: 25, marginLeft: 10},
+    width: '100%',
+  },
+  title: { fontSize: 50, textAlign: 'center', fontWeight: 'bold', color: '#666859' },
+  subtitle: { fontSize: 18, textAlign: 'center', marginBottom: 25, marginLeft: 10 },
   input: {
     backgroundColor: 'white',
     borderWidth: 1,
@@ -107,9 +119,9 @@ const logstyle = StyleSheet.create({
     marginBottom: 10,
     borderRadius: 10,
   },
-  button: {backgroundColor: '#666859', borderRadius: 10, padding: 10, marginBottom: 10},
-  linktext: {color: 'white', fontWeight: 'bold', textAlign: 'center', fontSize: 20},
-  newaccount: {color: '#1A3C40', fontWeight: 'bold', textAlign: 'center', paddingTop: 20, fontSize: 25},
-  forgot: {color: '#1A3C40', fontWeight: 'bold', textAlign: 'center', paddingTop: 10, fontSize: 15}
+  button: { backgroundColor: '#666859', borderRadius: 10, padding: 10, marginBottom: 10 },
+  linktext: { color: 'white', fontWeight: 'bold', textAlign: 'center', fontSize: 20 },
+  newaccount: { color: '#1A3C40', fontWeight: 'bold', textAlign: 'center', paddingTop: 20, fontSize: 25 },
+  forgot: { color: '#1A3C40', fontWeight: 'bold', textAlign: 'center', paddingTop: 10, fontSize: 15 }
 });
 
