@@ -25,6 +25,7 @@ export default function FormScreen() {
     const [images, setImages] = useState<string[]>([]);
     const [title, setTitle] = useState('');
     const [address, setAddress] = useState('');
+    const [isAddressValid, setIsAddressValid] = useState(false);
     const [description, setDescription] = useState('');
 
     const [startTime, setStartTime] = useState('');
@@ -59,6 +60,7 @@ export default function FormScreen() {
                     const data = docSnap.data();
                     setTitle(data.title || '');
                     setAddress(data.address || '');
+                    setIsAddressValid(true);
                     setDescription(data.description || '');
                     setStartTime(data.startTime || '');
                     setEndTime(data.endTime || '');
@@ -120,6 +122,7 @@ export default function FormScreen() {
                 if (streetInfo && cityState) {
                     const fullAddress = `${streetInfo}, ${cityState}`;
                     setAddress(fullAddress);
+                    setIsAddressValid(true);
                     if (googlePlacesRef.current) {
                         googlePlacesRef.current.setAddressText(fullAddress);
                     }
@@ -130,6 +133,37 @@ export default function FormScreen() {
 
     const removeImage = (indexToRemove: number) => {
         setImages(currentImages => currentImages.filter((_, index) => index !== indexToRemove));
+    };
+
+    const handleAddPhoto = () => {
+        Alert.alert(
+            "Add a Photo",
+            "Choose where to get your picture from",
+            [
+                { text: "Take Photo", onPress: takePhoto },
+                { text: "Choose from Gallery", onPress: pickImages },
+                { text: "Cancel", style: "cancel" }
+            ]
+        );
+    };
+
+    const takePhoto = async () => {
+        const permissionResult = await ImagePicker.requestCameraPermissionsAsync();
+        
+        if (permissionResult.granted === false) {
+            Alert.alert("Permission Denied", "We need camera access to take pictures of your items.");
+            return;
+        }
+
+        let result = await ImagePicker.launchCameraAsync({
+            mediaTypes: ImagePicker.MediaTypeOptions.Images,
+            quality: 0.2, 
+        });
+
+        if (!result.canceled) {
+            const selectedUris = result.assets.map(asset => asset.uri);
+            setImages(prevImages => [...prevImages, ...selectedUris]);
+        }
     };
 
     const pickImages = async () => {
@@ -160,6 +194,15 @@ export default function FormScreen() {
     const handleSavePost = async () => {
         if (!title || !address || !description || !startTime || !endTime || images.length === 0) {
             Alert.alert('Missing Info', 'Please fill out all fields');
+            return;
+        }
+        if (!isAddressValid) {
+            Alert.alert('Invalid Address', 'Please select a valid location from the dropdown suggestions.');
+            return;
+        }
+
+        if (startTime === endTime) {
+            Alert.alert('Invalid Time', 'Start and end time cannot be exactly the same.');
             return;
         }
         setSaving(true);
@@ -197,7 +240,7 @@ export default function FormScreen() {
                     ...postData,
                     categories: ['Furniture'],
                     likes: 0,
-                    postedBy: auth.currentUser?.uid,
+                    postedBy: auth.currentUser?.uid || 'Anonymous',
                     authorName: auth.currentUser?.displayName || auth.currentUser?.email || 'Anonymous',
                     authorAvatar: auth.currentUser?.photoURL || null,
                     postedDate: new Date().toISOString().split('T')[0],
@@ -255,13 +298,14 @@ export default function FormScreen() {
                                         </View>
                                     )}
                                 />
-                                <Pressable onPress={pickImages} style={styles.editPhotoButton}>
+                                <Pressable onPress={handleAddPhoto} style={styles.editPhotoButton}>
                                     <Ionicons name="camera" size={20} color="white" />
                                     <Text style={styles.editPhotoText}>Edit</Text>
                                 </Pressable>
                             </View>
                         ) : (
-                            <Pressable onPress={pickImages} style={styles.placeholderContainer}>
+                            
+                            <Pressable onPress={handleAddPhoto} style={styles.placeholderContainer}>
                                 <Ionicons name="camera-outline" size={40} color="#1A3C40" />
                                 <Text style={styles.placeholderText}>Add photos</Text>
                             </Pressable>
@@ -278,12 +322,16 @@ export default function FormScreen() {
                             placeholder="e.g. 123 sunset blv."
                             fetchDetails={true}
                             disableScroll={true}
-                            textInputProps={{
-                                onChangeText: (text) => setAddress(text),
+                            textInputProps={{ 
+                                onChangeText: (text) => {
+                                setAddress(text);
+                                setIsAddressValid(false);
+                            },
                                 value: address
                             }}
                             onPress={(data, details = null) => {
                                 setAddress(data.description);
+                                setIsAddressValid(true);
                                 if (details?.geometry?.location) {
                                     setLocation({
                                         latitude: details.geometry.location.lat,
@@ -293,7 +341,7 @@ export default function FormScreen() {
                                     });
                                 }
                             }}
-                            query={{ key: 'AIzaSyAO7V8REcbNEmifnuI2DaRpHzlpHQKC3lk', language: 'en', components: 'country:us' }}
+                            query={{ key: process.env.EXPO_PUBLIC_GOOGLE_MAPS_KEY, language: 'en', components: 'country:us' }}
                             styles={{
                                 textInputContainer: { width: '100%' },
                                 textInput: { borderWidth: 1, borderColor: '#ddd', padding: 14, borderRadius: 12, backgroundColor: '#f9f9f9', fontSize: 16, height: 50 },
@@ -303,7 +351,19 @@ export default function FormScreen() {
                     </View>
                     
                     <Text style={styles.label}>Description</Text>
-                    <TextInput style={[styles.input, styles.textArea]} placeholder="What are you selling?" value={description} onChangeText={setDescription} multiline />
+                    <View>
+                        <TextInput 
+                            style={[styles.input, styles.textArea]} 
+                            placeholder="What are you selling?" 
+                            value={description} 
+                            onChangeText={setDescription} 
+                            multiline 
+                            maxLength={500}
+                        />
+                        <Text style={styles.charCount}>
+                            {description.length}/500
+                        </Text>
+                    </View>
 
                     <Text style={styles.label}>Post Longevity (Days)</Text>
                     <View style={styles.longevityContainer}>
@@ -386,6 +446,7 @@ const styles = StyleSheet.create({
     label: { fontWeight: '600', marginTop: 15, marginBottom: 5, color: '#333' },
     input: { borderWidth: 1, borderColor: '#ddd', padding: 14, borderRadius: 12, backgroundColor: '#f9f9f9', fontSize: 16 },
     textArea: { height: 100, textAlignVertical: 'top' },
+    charCount: { textAlign: 'right', fontSize: 12, color: '#888', marginTop: 4, marginRight: 4 },
     row: {flexDirection: 'row'},
 
     longevityContainer: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 5 },
