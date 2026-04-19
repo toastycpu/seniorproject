@@ -3,7 +3,7 @@ import MapView, { Marker } from 'react-native-maps';
 import { useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { useState, useCallback } from 'react';
 import { collection, getDocs, query, where } from 'firebase/firestore';
-import { db } from '../../firebase/firebaseConfig';
+import { db, auth } from '../../firebase/firebaseConfig';
 
 export default function MapScreen() {
     const [sales, setSales] = useState<any[]>([]);
@@ -43,6 +43,8 @@ export default function MapScreen() {
             </View>
         );
     }
+
+    const currentUserId = auth.currentUser?.uid;
     return (
         <View style={mapstyle.container}>
             <MapView
@@ -57,13 +59,20 @@ export default function MapScreen() {
                 {sales.map((sale) => {
                     if (!sale.latitude || !sale.longitude) return null;
 
+                    let markerColor = '#1A3C40'; //default color
+                    if (sale.id === selectedId) {
+                        markerColor = 'yellow'; //link from homefeed
+                    } else if (currentUserId && sale.postedBy === currentUserId) {
+                        markerColor = 'red' //user own post
+                    }
+
                     return (
                         <Marker
                             key={sale.id}
                             coordinate={{latitude: sale.latitude, longitude: sale.longitude}}
                             title={sale.title}
                             description={sale.description}
-                            pinColor={sale.id === selectedId ?'red' : '#1A3C40'}
+                            pinColor={markerColor}
                         />
                     )
 
