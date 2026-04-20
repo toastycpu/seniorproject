@@ -6,6 +6,7 @@ import { auth, db } from '../../firebase/firebaseConfig';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
+import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 
 interface Sale {
     id: string,
@@ -36,13 +37,24 @@ export default function ProfileScreen() {
         });
 
         if (!result.canceled) {
-            const imageUri = result.assets[0].uri;
-            setProfileImage(imageUri);
+            const localUri = result.assets[0].uri;
+            
             if (auth.currentUser) {
                 try {
-                    await updateProfile(auth.currentUser, { photoURL: imageUri });
+                    const response = await fetch(localUri);
+                    const blob = await response.blob();
+                    const storage = getStorage();
+                    const storageRef = ref(storage, `avatars/${auth.currentUser.uid}`);
+                    await uploadBytes(storageRef, blob);
+
+                    const downloadUrl = await getDownloadURL(storageRef);
+                    await updateProfile(auth.currentUser, { photoURL: downloadUrl });
+                    
+                    setProfileImage(downloadUrl);
+                    Alert.alert("Success", "Profile picture updated successfully!");
                 } catch (error) {
                     console.log("Error updating profile photo:", error);
+                    Alert.alert("Error", "Could not upload profile picture.");
                 }
             }
         }
@@ -139,6 +151,16 @@ export default function ProfileScreen() {
         }
     };
 
+    const activePostsCount = myPosts.filter((item) => {
+        if (!item.expiresAt) return true;
+        
+        const expirationDate = item.expiresAt.seconds 
+            ? new Date(item.expiresAt.seconds * 1000) 
+            : new Date(item.expiresAt);
+            
+        return expirationDate >= new Date();
+    }).length;
+
     const ProfileHeader = () => (
         <View style={Profilestyle.headerContainer}>
             <Text style={Profilestyle.screenTitle}>Profile</Text>
@@ -162,7 +184,7 @@ export default function ProfileScreen() {
             </Text>
             <Text style={Profilestyle.email}>{user?.email}</Text>
             <View style={Profilestyle.statsContainer}>
-                <Text style={Profilestyle.statNumber}>{myPosts.length}</Text>
+                <Text style={Profilestyle.statNumber}>{activePostsCount}</Text>
                 <Text style={Profilestyle.statLabel}>Active Posts</Text>
             </View>
             <Pressable style={Profilestyle.logoutButton} onPress={handleLogout}>
