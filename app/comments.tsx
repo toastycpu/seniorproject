@@ -1,6 +1,6 @@
 import { View, Text, TextInput, Pressable, StyleSheet, FlatList, KeyboardAvoidingView, Platform, ActivityIndicator, Image, Alert } from 'react-native';
 import { useState, useEffect } from 'react';
-import { collection, addDoc, query, orderBy, onSnapshot, serverTimestamp } from 'firebase/firestore';
+import { collection, addDoc, query, orderBy, onSnapshot, serverTimestamp, doc, updateDoc, deleteDoc, increment } from 'firebase/firestore';
 import { db, auth } from '../firebase/firebaseConfig';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -16,12 +16,20 @@ interface Comment {
     replyToName?: string;
     replyToUserId?: string;
     replies?: Comment[];
+    isEdited?: boolean;
 }
 
-
-const CommentNode = ({ item, level = 0, onReply }: { item: Comment, level: number, onReply: (c: Comment) => void }) => {
+const CommentNode = ({ item, level = 0, onReply, onEdit, onDelete, currentUserUid }: { 
+    item: Comment, 
+    level: number, 
+    onReply: (c: Comment) => void,
+    onEdit: (c: Comment) => void,
+    onDelete: (id: string) => void,
+    currentUserUid?: string
+}) => {
     const indent = Math.min(level * 30, 90);
     const avatarSize = level > 0 ? 24 : 30;
+    const isOwner = item.userId === currentUserUid;
 
     return (
         <View>
@@ -47,15 +55,29 @@ const CommentNode = ({ item, level = 0, onReply }: { item: Comment, level: numbe
                             </Text>
                         )}
                         
-                        <Text style={styles.commentText}>{item.text}</Text>
+                        <Text style={styles.commentText}>
+                            {item.text}
+                            {item.isEdited && <Text style={styles.editedText}> (edited)</Text>}
+                        </Text>
                     </View>
                     
-                    <Pressable 
-                        style={styles.replyButton} 
-                        onPress={() => onReply(item)}
-                    >
-                        <Text style={styles.replyButtonText}>Reply</Text>
-                    </Pressable>
+
+                    <View style={styles.actionRow}>
+                        <Pressable onPress={() => onReply(item)} style={styles.actionButton}>
+                            <Text style={styles.replyButtonText}>Reply</Text>
+                        </Pressable>
+                        {isOwner && (
+                            <>
+                                <Pressable onPress={() => onEdit(item)} style={styles.actionButton}>
+                                    <Text style={styles.replyButtonText}>Edit</Text>
+                                </Pressable>
+                                
+                                <Pressable onPress={() => onDelete(item.id)} style={styles.actionButton}>
+                                    <Text style={[styles.replyButtonText, { color: '#e74c3c' }]}>Delete</Text>
+                                </Pressable>
+                            </>
+                        )}
+                    </View>
                 </View>
             </View>
 
@@ -66,7 +88,10 @@ const CommentNode = ({ item, level = 0, onReply }: { item: Comment, level: numbe
                             key={reply.id} 
                             item={reply} 
                             level={level + 1} 
-                            onReply={onReply} 
+                            onReply={onReply}
+                            onEdit={onEdit}
+                            onDelete={onDelete}
+                            currentUserUid={currentUserUid}
                         />
                     ))}
                 </View>
@@ -84,7 +109,9 @@ export default function CommentsScreen() {
     const [newComment, setNewComment] = useState('');
     const [loading, setLoading] = useState(true);
     const [submitting, setSubmitting] = useState(false);
+    
     const [replyingTo, setReplyingTo] = useState<Comment | null>(null);
+    const [editingComment, setEditingComment] = useState<Comment | null>(null);
 
     useEffect(() => {
         if (!postId) return;
@@ -119,36 +146,80 @@ export default function CommentsScreen() {
         return () => unsubscribe();
     }, [postId]);
 
+    const handleStartEdit = (comment: Comment) => {
+        setReplyingTo(null);
+        setEditingComment(comment);
+        setNewComment(comment.text);
+    };
+
+    const handleDelete = (commentId: string) => {
+        Alert.alert(
+            "Delete Comment",
+            "Are you sure you want to permanently delete this comment?",
+            [
+                { text: "Cancel", style: "cancel" },
+                {
+                    text: "Delete",
+                    style: "destructive",
+                    onPress: async () => {
+                        try {
+                            await deleteDoc(doc(db, 'sales', postId as string, 'comments', commentId));
+                            await updateDoc(doc(db, 'sales', postId as string), {
+                                commentsCount: increment(-1)
+                            });
+                        } catch (error) {
+                            Alert.alert("Error", "Could not delete comment.");
+                        }
+                    }
+                }
+            ]
+        );
+    };
+
     const handlePostComment = async () => {
-        if (!newComment.trim() || !user || !postId) return;
+        if (!newComment.trim() || !user || !postId || submitting) return;
 
         const commentToSave = newComment.trim();
-        setNewComment('');
         setSubmitting(true);
+        
         try {
-            const commentsRef = collection(db, 'sales', postId, 'comments');
-            const commentData: any = {
-                text: commentToSave,
-                userId: user.uid,
-                userName: user.displayName || user.email?.split('@')[0] || 'Anonymous',
-                userAvatar: user.photoURL || null,
-                createdAt: serverTimestamp(),
-            };
+            if (editingComment) {
+                const commentRef = doc(db, 'sales', postId, 'comments', editingComment.id);
+                await updateDoc(commentRef, {
+                    text: commentToSave,
+                    isEdited: true
+                });
+                
+                setEditingComment(null);
+                setNewComment('');
+            } else {
+                const commentsRef = collection(db, 'sales', postId, 'comments');
+                const commentData: any = {
+                    text: commentToSave,
+                    userId: user.uid,
+                    userName: user.displayName || user.email?.split('@')[0] || 'Anonymous',
+                    userAvatar: user.photoURL || null,
+                    createdAt: serverTimestamp(),
+                };
 
-            if (replyingTo) {
-                commentData.replyToId = replyingTo.id;
-                commentData.replyToName = replyingTo.userName;
-                commentData.replyToUserId = replyingTo.userId;
+                if (replyingTo) {
+                    commentData.replyToId = replyingTo.id;
+                    commentData.replyToName = replyingTo.userName;
+                    commentData.replyToUserId = replyingTo.userId;
+                }
+
+                await addDoc(commentsRef, commentData);
+                
+                await updateDoc(doc(db, 'sales', postId), {
+                    commentsCount: increment(1)
+                });
+                
+                setNewComment('');
+                setReplyingTo(null);
             }
-
-            await addDoc(commentsRef, commentData);
-            
-            setNewComment('');
-            setReplyingTo(null);
         } catch (error) {
             console.log("Error posting comment:", error);
-            setNewComment(commentToSave);
-            Alert.alert("Error", "Could not post comment. Check your internet or Firebase Indexes.");
+            Alert.alert("Error", "Could not process comment.");
         } finally {
             setSubmitting(false);
         }
@@ -184,12 +255,19 @@ export default function CommentsScreen() {
                     <Text style={styles.emptyText}>No comments yet. Be the first!</Text>
                 }
                 renderItem={({ item }) => (
-                    <CommentNode item={item} level={0} onReply={setReplyingTo} />
+                    <CommentNode 
+                        item={item} 
+                        level={0} 
+                        onReply={setReplyingTo} 
+                        onEdit={handleStartEdit}
+                        onDelete={handleDelete}
+                        currentUserUid={user?.uid}
+                    />
                 )}
             />
 
             <View style={styles.inputWrapper}>
-                {replyingTo && (
+                {replyingTo && !editingComment && (
                     <View style={styles.replyBanner}>
                         <Text style={styles.replyBannerText}>
                             Replying to <Text style={{fontWeight: 'bold'}}>{replyingTo.userName}</Text>
@@ -200,24 +278,35 @@ export default function CommentsScreen() {
                     </View>
                 )}
 
+                {editingComment && (
+                    <View style={[styles.replyBanner, { backgroundColor: '#fff3cd' }]}>
+                        <Text style={styles.replyBannerText}>
+                            Editing comment...
+                        </Text>
+                        <Pressable onPress={() => { setEditingComment(null); setNewComment(''); }}>
+                            <Ionicons name="close-circle" size={20} color="#888" />
+                        </Pressable>
+                    </View>
+                )}
+
                 <View style={styles.inputContainer}>
                     <TextInput
                         style={styles.input}
                         value={newComment}
                         onChangeText={setNewComment}
-                        placeholder={replyingTo ? `Reply to ${replyingTo.userName}...` : "Add a comment..."}
+                        placeholder={editingComment ? "Edit your comment..." : replyingTo ? `Reply to ${replyingTo.userName}...` : "Add a comment..."}
                         placeholderTextColor="#888"
                         multiline
                     />
                     <Pressable 
-                        style={[styles.postButton, !newComment.trim() && styles.postButtonDisabled]}
+                        style={[styles.postButton, (!newComment.trim() || submitting) && styles.postButtonDisabled]}
                         onPress={handlePostComment}
                         disabled={!newComment.trim() || submitting}
                     >
                         {submitting ? (
                             <ActivityIndicator color="white" size="small" />
                         ) : (
-                            <Ionicons name="send" size={20} color="white" />
+                            <Ionicons name={editingComment ? "checkmark" : "send"} size={20} color="white" />
                         )}
                     </Pressable>
                 </View>
@@ -279,9 +368,20 @@ const styles = StyleSheet.create({
     },
     commentName: { fontSize: 12, fontWeight: 'bold', color: '#666', marginBottom: 4 },
     commentText: { fontSize: 15, color: '#333' },
+    editedText: { fontSize: 11, color: '#999', fontStyle: 'italic' }, 
 
     replyingToText: { fontSize: 12, color: '#007AFF', marginBottom: 4, fontStyle: 'italic' },
-    replyButton: { marginTop: 4, marginLeft: 12 },
+
+    actionRow: {
+        flexDirection: 'row',
+        marginTop: 4,
+        marginLeft: 8,
+        alignItems: 'center',
+    },
+    actionButton: {
+        paddingVertical: 4,
+        paddingHorizontal: 8,
+    },
     replyButtonText: { fontSize: 12, color: '#888', fontWeight: 'bold' },
     
     inputWrapper: {

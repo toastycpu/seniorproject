@@ -1,9 +1,9 @@
-import {View, Text, Image, StyleSheet, FlatList, Pressable, Dimensions, RefreshControl, Alert} from 'react-native';
-import {useState, useCallback} from 'react';
-import {collection, getDocs, query, orderBy, where, doc, updateDoc, arrayUnion, arrayRemove, increment} from 'firebase/firestore';
-import {db, auth} from '../../firebase/firebaseConfig';
+import { View, Text, Image, StyleSheet, FlatList, Pressable, Dimensions, RefreshControl, Alert, Modal } from 'react-native';
+import { useState, useCallback } from 'react';
+import { collection, getDocs, query, orderBy, where, doc, updateDoc, arrayUnion, arrayRemove, increment } from 'firebase/firestore';
+import { db, auth } from '../../firebase/firebaseConfig';
 import { Ionicons } from '@expo/vector-icons';
-import {useRouter, useFocusEffect} from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 
 const { width: screenWidth } = Dimensions.get('window');
 const imageWidth = screenWidth - 40;
@@ -27,11 +27,13 @@ interface Sale {
     longitude?: number;
     savedBy?: string[];
     likedBy?: string[];
+    commentsCount?: number;
 }
 
 export default function HomeScreen(){
     const [sales, setSales]= useState<Sale[]>([]);
     const [refreshing, setRefreshing] = useState(false);
+    const [selectedImage, setSelectedImage] = useState<string | null>(null);
     
     const onRefresh = useCallback(async () => {
         setRefreshing(true);
@@ -138,7 +140,6 @@ export default function HomeScreen(){
         }, [])
     );
 
-
     const getTimeRemaining =(expiresAt: any) =>{
         if (!expiresAt) return "Permanent";
 
@@ -161,17 +162,12 @@ export default function HomeScreen(){
             <View style={homestyle.headercontainer}>
                 <View style={{width: 40}}/>
                 <Text style={homestyle.header}>ReFind</Text>
-                <Pressable style={homestyle.button} onPress={() => router.push('/create')}
-                >
+                <Pressable style={homestyle.button} onPress={() => router.push('/create')}>
                     <Ionicons name="add" size={24} color="white" />
                 </Pressable>
             </View>   
-            <Pressable
-                onPress={() => router.push('/search')}
-                style={homestyle.fakeSearchBar}
-            >
+            <Pressable onPress={() => router.push('/search')} style={homestyle.fakeSearchBar}>
                 <Ionicons name="search" size={20} color="#666" style={{ marginRight: 8 }} />
-
             </Pressable>
 
             <FlatList
@@ -184,18 +180,14 @@ export default function HomeScreen(){
                 renderItem={({item}) => {
                     const isSavedByCurrentUser = item.savedBy?.includes(auth.currentUser?.uid || '');
                     const isLikedByCurrentUser = item.likedBy?.includes(auth.currentUser?.uid || '');
-                    const isOwnPost = item.postedBy === auth.currentUser?.uid;
-
+                    
                     return (
                         <View style={homestyle.card}>
                             <View style={homestyle.cardHeader}>
                                 {item.authorAvatar ? (
-                                        <Image 
-                                            source={{ uri: item.authorAvatar }} 
-                                            style={homestyle.avatar} 
-                                        />
+                                        <Image source={{ uri: item.authorAvatar }} style={homestyle.avatar} />
                                     ) : (
-                                        <View style={[homestyle.avatar, { justifyContent: 'center', alignItems: 'center', backgroundColor: '#ccc' }]}>
+                                        <View style={[homestyle.avatar, { justifyContent: 'center', alignItems: 'center' }]}>
                                             <Ionicons name="person" size={20} color="white" />
                                         </View>
                                     )}
@@ -219,18 +211,16 @@ export default function HomeScreen(){
                                     showsHorizontalScrollIndicator={false}
                                     keyExtractor={(imgUri, index) => index.toString()}
                                     renderItem={({ item: imgUri }) => (
-                                        <Image 
-                                            source={{ uri: imgUri }} 
-                                            style={[homestyle.image, { width: imageWidth }]} 
-                                        />
+                                        <Pressable onPress={() => setSelectedImage(imgUri)}>
+                                            <Image source={{ uri: imgUri }} style={[homestyle.image, { width: imageWidth }]} />
+                                        </Pressable>
                                     )}
                                 />
-                            ) : (
-                                <Image 
-                                    source={{ uri: item.image }} 
-                                    style={[homestyle.image, { width: imageWidth }]} 
-                                />
-                            )}
+                            ) : item.image ? (
+                                <Pressable onPress={() => setSelectedImage(item.image!)}>
+                                    <Image source={{ uri: item.image! }} style={[homestyle.image, { width: imageWidth }]} />
+                                </Pressable>
+                            ) : null}
 
                             <View style={homestyle.cardContent}>
                                 <Text style={[homestyle.title, { marginBottom: 5 }]}>{item.title}</Text>
@@ -259,21 +249,14 @@ export default function HomeScreen(){
                                         {item.description}
                                     </Text>
 
-
                                     <View style={homestyle.actionRow}>
-                                    <Pressable 
-                                            style={homestyle.actionButton}
-                                            onPress={() => handleLike(item)}
-                                        >
+                                        <Pressable style={homestyle.actionButton} onPress={() => handleLike(item)}>
                                             <Ionicons 
                                                 name={isLikedByCurrentUser ? "heart" : "heart-outline"} 
                                                 size={20} 
                                                 color={isLikedByCurrentUser ? "#e74c3c" : "#1A3C40"} 
                                             />
-                                            <Text style={[
-                                                homestyle.actionText,
-                                                isLikedByCurrentUser && { color: '#e74c3c', fontWeight: 'bold' }
-                                            ]}>
+                                            <Text style={[homestyle.actionText, isLikedByCurrentUser && { color: '#e74c3c', fontWeight: 'bold' }]}>
                                                 {item.likes || 0}
                                             </Text>
                                         </Pressable>
@@ -282,22 +265,17 @@ export default function HomeScreen(){
                                             style={homestyle.actionButton}
                                         >
                                             <Ionicons name="chatbubble-outline" size={20} color="#1A3C40" />
-                                            <Text style={homestyle.actionText}>Comment</Text>
+                                            <Text style={homestyle.actionText}>
+                                                {item.commentsCount || 0}
+                                            </Text>
                                         </Pressable>
-                                        <Pressable 
-                                            style={homestyle.actionButton}
-                                            onPress={() => handleSave(item)}
-                                            
-                                            >
+                                        <Pressable style={homestyle.actionButton} onPress={() => handleSave(item)}>
                                             <Ionicons 
                                                 name={isSavedByCurrentUser ? "bookmark" : "bookmark-outline"} 
                                                 size={20} 
                                                 color={isSavedByCurrentUser ? "#1A3C40" : "#555"}
                                             />
-                                            <Text style={[
-                                                homestyle.actionText,
-                                                isSavedByCurrentUser && {color: '#1A3C40', fontWeight: 'bold' }
-                                            ]}>
+                                            <Text style={[homestyle.actionText, isSavedByCurrentUser && {color: '#1A3C40', fontWeight: 'bold' }]}>
                                                 {isSavedByCurrentUser ? "Saved" : "Save"}
                                             </Text>
                                         </Pressable>
@@ -307,6 +285,17 @@ export default function HomeScreen(){
                     );
                 }}
             />
+
+            <Modal visible={!!selectedImage} transparent={true} animationType="fade">
+                <View style={homestyle.modalContainer}>
+                    <Pressable style={homestyle.closeButton} onPress={() => setSelectedImage(null)}>
+                        <Ionicons name="close-circle" size={40} color="white" />
+                    </Pressable>
+                    {selectedImage && (
+                        <Image source={{ uri: selectedImage }} style={homestyle.fullScreenImage} resizeMode="contain" />
+                    )}
+                </View>
+            </Modal>
         </View>
     );
 }
@@ -326,8 +315,6 @@ const homestyle = StyleSheet.create({
         fontWeight: 'bold',
         color: '#1A3C40'
     },
-
-
     button: {
         backgroundColor: '#485b5d', 
         width: 40, height: 40, 
@@ -350,8 +337,6 @@ const homestyle = StyleSheet.create({
         padding: 12,
         alignItems: 'center',
     },
-
-
     avatar: {
         width: 32,
         height: 32,
@@ -408,7 +393,6 @@ const homestyle = StyleSheet.create({
         color: '#555',
         fontWeight: '500'
     },
-
     timerBadge: {
         flexDirection: 'row',
         alignItems: 'center',
@@ -433,4 +417,7 @@ const homestyle = StyleSheet.create({
         paddingVertical: 12,
         borderRadius: 25,
     },
+    modalContainer: { flex: 1, backgroundColor: 'rgba(0, 0, 0, 0.9)', justifyContent: 'center', alignItems: 'center' },
+    closeButton: { position: 'absolute', top: 50, right: 20, zIndex: 1 },
+    fullScreenImage: { width: '100%', height: '80%' }
 });
