@@ -1,6 +1,6 @@
 import {View, Text, StyleSheet, ActivityIndicator} from 'react-native';
 import MapView, { Marker } from 'react-native-maps';
-import { useLocalSearchParams, useFocusEffect } from 'expo-router';
+import { useLocalSearchParams, useFocusEffect, router } from 'expo-router';
 import { useState, useCallback } from 'react';
 import { collection, getDocs, query, where } from 'firebase/firestore';
 import { db, auth } from '../../firebase/firebaseConfig';
@@ -32,8 +32,8 @@ export default function MapScreen() {
                 }
             };
         fetchSales();
-        }, [])
-    );
+    }, [])
+);
 
     if (loading) {
         return (

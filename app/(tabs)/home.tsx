@@ -1,9 +1,10 @@
-import { View, Text, Image, StyleSheet, FlatList, Pressable, Dimensions, RefreshControl, Alert, Modal } from 'react-native';
+import { View, Text, Image, StyleSheet, FlatList, Pressable, Dimensions, RefreshControl, Alert } from 'react-native';
 import { useState, useCallback } from 'react';
 import { collection, getDocs, query, orderBy, where, doc, updateDoc, arrayUnion, arrayRemove, increment } from 'firebase/firestore';
 import { db, auth } from '../../firebase/firebaseConfig';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useFocusEffect } from 'expo-router';
+import ImageViewing from 'react-native-image-viewing';
 
 const { width: screenWidth } = Dimensions.get('window');
 const imageWidth = screenWidth - 40;
@@ -28,12 +29,18 @@ interface Sale {
     savedBy?: string[];
     likedBy?: string[];
     commentsCount?: number;
+    daysOpen?: string[];
+    price?: string;
+    isOwnPrice?: boolean;
 }
 
 export default function HomeScreen(){
     const [sales, setSales]= useState<Sale[]>([]);
     const [refreshing, setRefreshing] = useState(false);
-    const [selectedImage, setSelectedImage] = useState<string | null>(null);
+    
+    const [viewerImages, setViewerImages] = useState<{uri: string}[]>([]);
+    const [isViewerVisible, setIsViewerVisible] = useState(false);
+    const [currentImageIndex, setCurrentImageIndex] = useState(0);
     
     const onRefresh = useCallback(async () => {
         setRefreshing(true);
@@ -144,6 +151,11 @@ export default function HomeScreen(){
         if (!expiresAt) return "Permanent";
 
         const expiry = expiresAt.seconds ? new Date(expiresAt.seconds * 1000) : new Date(expiresAt);
+
+        if (expiry.getFullYear() > 2090) {
+            return "Permanent";
+        }
+
         const now = new Date();
         const diffInMins = expiry.getTime() - now.getTime();
         const diffInHrs = Math.floor(diffInMins / (1000 *60 *60));
@@ -152,7 +164,7 @@ export default function HomeScreen(){
             return `${Math.floor(diffInHrs / 24)}d left`;
         } else if (diffInHrs > 0) {
             return `${diffInHrs}h left`;
-        }else {
+        } else {
             return "Ending soon";
         }
     };
@@ -181,13 +193,35 @@ export default function HomeScreen(){
                     const isSavedByCurrentUser = item.savedBy?.includes(auth.currentUser?.uid || '');
                     const isLikedByCurrentUser = item.likedBy?.includes(auth.currentUser?.uid || '');
                     
+                    const formattedImages = item.images && item.images.length > 0 
+                        ? item.images.map(img => ({ uri: img })) 
+                        : item.image ? [{ uri: item.image }] : [];
+
+
+                    const hasTime = item.startTime && item.endTime;
+                    const hasDays = Array.isArray(item.daysOpen) && item.daysOpen.length > 0;
+                    const isYardSaleEvent = hasTime || hasDays;
+
+                    const formatPostedDate = (dateVal: any) => {
+                        if (!dateVal) return '';
+
+                        if (dateVal.seconds) {
+                            return new Date(dateVal.seconds * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+                        }
+                        const dateObj = new Date(dateVal);
+                        if (!isNaN(dateObj.getTime())) {
+                            return dateObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+                        }
+                        return dateVal;
+                    };
+
                     return (
                         <View style={homestyle.card}>
                             <View style={homestyle.cardHeader}>
                                 {item.authorAvatar ? (
                                         <Image source={{ uri: item.authorAvatar }} style={homestyle.avatar} />
                                     ) : (
-                                        <View style={[homestyle.avatar, { justifyContent: 'center', alignItems: 'center' }]}>
+                                        <View style={[homestyle.avatar, { justifyContent: 'center', alignItems: 'center', backgroundColor: '#ccc' }]}>
                                             <Ionicons name="person" size={20} color="white" />
                                         </View>
                                     )}
@@ -199,7 +233,7 @@ export default function HomeScreen(){
                                             <Text style={homestyle.timerText}>{getTimeRemaining(item.expiresAt)}</Text>
                                         </View>
                                     </View>
-                                    <Text style={homestyle.date}>{item.postedDate} | {item.startTime} : {item.endTime}</Text>
+                                    <Text style={homestyle.date}>{formatPostedDate(item.postedDate)}</Text>
                                 </View>
                             </View>
 
@@ -210,92 +244,134 @@ export default function HomeScreen(){
                                     pagingEnabled
                                     showsHorizontalScrollIndicator={false}
                                     keyExtractor={(imgUri, index) => index.toString()}
-                                    renderItem={({ item: imgUri }) => (
-                                        <Pressable onPress={() => setSelectedImage(imgUri)}>
+                                    renderItem={({ item: imgUri, index }) => (
+                                        <Pressable onPress={() => {
+                                            setViewerImages(formattedImages);
+                                            setCurrentImageIndex(index);
+                                            setIsViewerVisible(true);
+                                        }}>
                                             <Image source={{ uri: imgUri }} style={[homestyle.image, { width: imageWidth }]} />
                                         </Pressable>
                                     )}
                                 />
                             ) : item.image ? (
-                                <Pressable onPress={() => setSelectedImage(item.image!)}>
+                                <Pressable onPress={() => {
+                                    setViewerImages(formattedImages);
+                                    setCurrentImageIndex(0);
+                                    setIsViewerVisible(true);
+                                }}>
                                     <Image source={{ uri: item.image! }} style={[homestyle.image, { width: imageWidth }]} />
                                 </Pressable>
                             ) : null}
 
                             <View style={homestyle.cardContent}>
-                                <Text style={[homestyle.title, { marginBottom: 5 }]}>{item.title}</Text>
-
-                                <View style={{flexDirection: 'row', alignItems: 'center', marginBottom: 8}}>
-                                    <Pressable
-                                        onPress={() => {
-                                            router.push({
-                                                pathname: '/(tabs)/map',
-                                                params: {
-                                                    selectedId: item.id,
-                                                    lat: item.latitude?.toString(),
-                                                    lng: item.longitude?.toString(),
-                                                }
-                                            });
-                                        }}
-                                        style={{paddingRight: 8, paddingVertical: 4}}
-                                    >
-                                        <Ionicons name="navigate-outline" size={20} color="#1627ae" style={{marginRight: 4}} />
-                                    </Pressable>
-                                    <Text style={[homestyle.address, {marginBottom: 0, flex: 1}]}>
-                                        {item.address}
-                                    </Text>
+                                {/* Adjusted marginBottom here to keep spacing even */}
+                                <Text style={[homestyle.title, { marginBottom: 4, fontSize: 18, fontWeight: 'bold' }]}>
+                                    {item.title}
+                                </Text>
+                                
+                                {/* --- NEW PRICE DISPLAY BLOCK --- */}
+                                <View style={{ marginBottom: 12 }}>
+                                    {item.isOwnPrice ? (
+                                        <Text style={{ fontSize: 16, fontWeight: 'bold', color: '#1A3C40' }}>
+                                            Name your price
+                                        </Text>
+                                    ) : item.price ? (
+                                        <Text style={{ fontSize: 16, fontWeight: 'bold', color: '#1A3C40' }}>
+                                            ${item.price}
+                                        </Text>
+                                    ) : null}
                                 </View>
-                                    <Text style={homestyle.description} >
-                                        {item.description}
-                                    </Text>
 
-                                    <View style={homestyle.actionRow}>
-                                        <Pressable style={homestyle.actionButton} onPress={() => handleLike(item)}>
-                                            <Ionicons 
-                                                name={isLikedByCurrentUser ? "heart" : "heart-outline"} 
-                                                size={20} 
-                                                color={isLikedByCurrentUser ? "#e74c3c" : "#1A3C40"} 
-                                            />
-                                            <Text style={[homestyle.actionText, isLikedByCurrentUser && { color: '#e74c3c', fontWeight: 'bold' }]}>
-                                                {item.likes || 0}
-                                            </Text>
-                                        </Pressable>
-                                        <Pressable 
-                                            onPress={() => router.push(`/comments?postId=${item.id}`)} 
-                                            style={homestyle.actionButton}
-                                        >
-                                            <Ionicons name="chatbubble-outline" size={20} color="#1A3C40" />
-                                            <Text style={homestyle.actionText}>
-                                                {item.commentsCount || 0}
-                                            </Text>
-                                        </Pressable>
-                                        <Pressable style={homestyle.actionButton} onPress={() => handleSave(item)}>
-                                            <Ionicons 
-                                                name={isSavedByCurrentUser ? "bookmark" : "bookmark-outline"} 
-                                                size={20} 
-                                                color={isSavedByCurrentUser ? "#1A3C40" : "#555"}
-                                            />
-                                            <Text style={[homestyle.actionText, isSavedByCurrentUser && {color: '#1A3C40', fontWeight: 'bold' }]}>
-                                                {isSavedByCurrentUser ? "Saved" : "Save"}
-                                            </Text>
-                                        </Pressable>
+                                
+                                {isYardSaleEvent && (
+                                    <View style={{ backgroundColor: '#f4f6f6', padding: 10, borderRadius: 8, marginBottom: 12 }}>
+                                        {hasDays && (
+                                            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: hasTime ? 6 : 0 }}>
+                                                <Ionicons name="calendar-outline" size={16} color="#1A3C40" style={{ marginRight: 6 }} />
+                                                <Text style={{ fontSize: 14, color: '#1A3C40', fontWeight: 'bold' }}>
+                                                    Days: <Text style={{ color: '#555', fontWeight: 'normal' }}>{item.daysOpen?.join(', ')}</Text>
+                                                </Text>
+                                            </View>
+                                        )}
+                                        {hasTime && (
+                                            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                                                <Ionicons name="time-outline" size={16} color="#1A3C40" style={{ marginRight: 6 }} />
+                                                <Text style={{ fontSize: 14, color: '#1A3C40', fontWeight: 'bold' }}>
+                                                    Time: <Text style={{ color: '#555', fontWeight: 'normal' }}>{item.startTime} - {item.endTime}</Text>
+                                                </Text>
+                                            </View>
+                                        )}
                                     </View>
+                                )}
+
+                                {item.address && (
+                                    <View style={{flexDirection: 'row', alignItems: 'center', marginBottom: 8}}>
+                                        <Pressable
+                                            onPress={() => {
+                                                router.push({
+                                                    pathname: '/(tabs)/map',
+                                                    params: { selectedId: item.id, lat: item.latitude?.toString(), lng: item.longitude?.toString() }
+                                                });
+                                            }}
+                                            style={{paddingRight: 8, paddingVertical: 4}}
+                                        >
+                                            <Ionicons name="navigate-circle" size={24} color="#1A3C40" />
+                                        </Pressable>
+                                        <Text style={[homestyle.address, {marginBottom: 0, flex: 1, color: '#555'}]}>
+                                            {item.address}
+                                        </Text>
+                                    </View>
+                                )}
+
+                                <Text style={[homestyle.description, { marginBottom: 16 }]}>
+                                    {item.description}
+                                </Text>
+
+                                <View style={homestyle.actionRow}>
+                                    <Pressable style={homestyle.actionButton} onPress={() => handleLike(item)}>
+                                        <Ionicons 
+                                            name={isLikedByCurrentUser ? "heart" : "heart-outline"} 
+                                            size={22} 
+                                            color={isLikedByCurrentUser ? "#e74c3c" : "#1A3C40"} 
+                                        />
+                                        <Text style={[homestyle.actionText, isLikedByCurrentUser && { color: '#e74c3c', fontWeight: 'bold' }]}>
+                                            {item.likes || 0}
+                                        </Text>
+                                    </Pressable>
+
+                                    <Pressable onPress={() => router.push(`/comments?postId=${item.id}`)} style={homestyle.actionButton}>
+                                        <Ionicons name="chatbubble-outline" size={20} color="#1A3C40" />
+                                        <Text style={homestyle.actionText}>
+                                            {item.commentsCount || 0}
+                                        </Text>
+                                    </Pressable>
+
+                                    <Pressable style={homestyle.actionButton} onPress={() => handleSave(item)}>
+                                        <Ionicons 
+                                            name={isSavedByCurrentUser ? "bookmark" : "bookmark-outline"} 
+                                            size={20} 
+                                            color={isSavedByCurrentUser ? "#1A3C40" : "#555"}
+                                        />
+                                        <Text style={[homestyle.actionText, isSavedByCurrentUser && {color: '#1A3C40', fontWeight: 'bold' }]}>
+                                            {isSavedByCurrentUser ? "Saved" : "Save"}
+                                        </Text>
+                                    </Pressable>
+                                </View>
                             </View>
                         </View> 
                     );
                 }}
             />
 
-            <Modal visible={!!selectedImage} transparent={true} animationType="fade">
-                <View style={homestyle.modalContainer}>
-                    <Pressable style={homestyle.closeButton} onPress={() => setSelectedImage(null)}>
-                        <Ionicons name="close-circle" size={40} color="white" />
-                    </Pressable>
-                    {selectedImage && (
-                        <Image source={{ uri: selectedImage }} style={homestyle.fullScreenImage} resizeMode="contain" />
-                    )}
-                </View>
-            </Modal>
+            <ImageViewing
+                images={viewerImages}
+                imageIndex={currentImageIndex}
+                visible={isViewerVisible}
+                onRequestClose={() => setIsViewerVisible(false)}
+                swipeToCloseEnabled={true}
+                doubleTapToZoomEnabled={true}
+            />
         </View>
     );
 }

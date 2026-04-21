@@ -1,6 +1,6 @@
 import {
     View, Text, Image, TextInput, StyleSheet, Pressable, ScrollView, Alert, 
-    ActivityIndicator, KeyboardAvoidingView, Platform, FlatList, Dimensions,
+    ActivityIndicator, KeyboardAvoidingView, Platform, FlatList, Dimensions, Switch
 } from 'react-native';
 import { useState, useEffect, useRef } from 'react';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -24,17 +24,21 @@ export default function FormScreen() {
 
     const [images, setImages] = useState<string[]>([]);
     const [title, setTitle] = useState('');
+    const [price, setPrice] = useState('');
+    const [isOwnPrice, setIsOwnPrice] = useState(false);
+    const [description, setDescription] = useState('');
     const [address, setAddress] = useState('');
     const [isAddressValid, setIsAddressValid] = useState(false);
-    const [description, setDescription] = useState('');
 
     const [startTime, setStartTime] = useState('');
     const [endTime, setEndTime] = useState('');
     const [showStartPicker, setShowStartPicker] = useState(false);
     const [showEndPicker, setShowEndPicker] = useState(false);
     const [tempDate] = useState(new Date());
+    const [selectedDays, setSelectedDays] = useState<string[]>([]);
+    const [longevity, setLongevity] = useState<number | null>(null);
 
-    const [longevity, setLongevity] = useState(3);
+    const daysOfWeek = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
     const longevityOptions = [1, 2, 3, 5, 7];
 
     const { width: screenWidth } = Dimensions.get('window');
@@ -47,7 +51,7 @@ export default function FormScreen() {
         latitudeDelta: 0.0922,
         longitudeDelta: 0.0421,
     });
-
+    //(edit mode)
     useEffect(() => {
         if (!isEditMode) return;
 
@@ -59,13 +63,17 @@ export default function FormScreen() {
                 if (docSnap.exists()) {
                     const data = docSnap.data();
                     setTitle(data.title || '');
+                    setPrice(data.price || '');
+                    setIsOwnPrice(data.isOwnPrice || false);
+                    setDescription(data.description || '');
                     setAddress(data.address || '');
                     setIsAddressValid(true);
-                    setDescription(data.description || '');
+                    
                     setStartTime(data.startTime || '');
                     setEndTime(data.endTime || '');
-                    setLongevity(data.longevityDays || data.duration || 3); 
+                    setLongevity(data.longevityDays || null); 
                     setImages(data.images || []);
+                    setSelectedDays(data.daysOpen || []);
                     
                     if (data.latitude && data.longitude) {
                         setLocation({
@@ -75,7 +83,6 @@ export default function FormScreen() {
                             longitudeDelta: 0.01,
                         });
                     }
-
                     if (data.address && googlePlacesRef.current) {
                         googlePlacesRef.current.setAddressText(data.address);
                     }
@@ -94,6 +101,7 @@ export default function FormScreen() {
         fetchPostData();
     }, [id, isEditMode]);
 
+    //(Create Mode)
     useEffect(() => {
         if (isEditMode) return; 
 
@@ -107,12 +115,8 @@ export default function FormScreen() {
             const { latitude, longitude } = currentLocation.coords;
 
             setLocation({
-                latitude,
-                longitude,
-                latitudeDelta: 0.01,
-                longitudeDelta: 0.01,
+                latitude, longitude, latitudeDelta: 0.01, longitudeDelta: 0.01,
             });
-
             let geocode = await Location.reverseGeocodeAsync({ latitude, longitude });
             if (geocode.length > 0) {
                 const place = geocode[0];
@@ -137,8 +141,7 @@ export default function FormScreen() {
 
     const handleAddPhoto = () => {
         Alert.alert(
-            "Add a Photo",
-            "Choose where to get your picture from",
+            "Add a Photo", "Choose where to get your picture from",
             [
                 { text: "Take Photo", onPress: takePhoto },
                 { text: "Choose from Gallery", onPress: pickImages },
@@ -149,17 +152,14 @@ export default function FormScreen() {
 
     const takePhoto = async () => {
         const permissionResult = await ImagePicker.requestCameraPermissionsAsync();
-        
         if (permissionResult.granted === false) {
             Alert.alert("Permission Denied", "We need camera access to take pictures of your items.");
             return;
         }
-
         let result = await ImagePicker.launchCameraAsync({
             mediaTypes: ImagePicker.MediaTypeOptions.Images,
             quality: 0.2, 
         });
-
         if (!result.canceled) {
             const selectedUris = result.assets.map(asset => asset.uri);
             setImages(prevImages => [...prevImages, ...selectedUris]);
@@ -172,15 +172,10 @@ export default function FormScreen() {
             allowsMultipleSelection: true,
             quality: 0.2,
         });
-
         if (!result.canceled) {
             const selectedUris = result.assets.map(asset => asset.uri);
             setImages(prevImages => [...prevImages, ...selectedUris]);
         }
-    };
-
-    const formatTime = (date: Date) => {
-        return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     };
 
     const uploadImageAsync = async (uri: string) => {
@@ -191,20 +186,34 @@ export default function FormScreen() {
         return await getDownloadURL(fileRef);
     };
 
-    const handleSavePost = async () => {
-        if (!title || !address || !description || !startTime || !endTime || images.length === 0) {
-            Alert.alert('Missing Info', 'Please fill out all fields');
-            return;
-        }
-        if (!isAddressValid) {
-            Alert.alert('Invalid Address', 'Please select a valid location from the dropdown suggestions.');
-            return;
-        }
+    const formatTime = (date: Date) => {
+        return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    };
 
-        if (startTime === endTime) {
+    const toggleDay = (day: string) => {
+        setSelectedDays((prev) => 
+            prev.includes(day) ? prev.filter(d => d !== day) : [...prev, day]
+        );
+    };
+
+    const handleSavePost = async () => {
+        if (!title || !address || !description || images.length === 0) {
+            Alert.alert('Missing Info', 'Please fill out all required fields (Images, Title, Address, Description)');
+            return;
+        }
+        if (!isOwnPrice && !price) {
+            Alert.alert('Missing Price', 'Please enter a price or select "Name your price".');
+            return;
+        }
+        if (address.length < 5) {
+            Alert.alert('Invalid Address', 'Please enter a full address.');
+            return;
+        }
+        if (startTime && endTime && startTime === endTime) {
             Alert.alert('Invalid Time', 'Start and end time cannot be exactly the same.');
             return;
         }
+        
         setSaving(true);
 
         try {
@@ -215,11 +224,18 @@ export default function FormScreen() {
             );
             const finalImages = [...existingUrls, ...uploadedUrls];
 
-            const expireDate = new Date();
-            expireDate.setDate(expireDate.getDate() + longevity);
+            let expireDate;
+            if (longevity) {
+                expireDate = new Date();
+                expireDate.setDate(expireDate.getDate() + longevity);
+            } else {
+                expireDate = new Date('2099-12-31T23:59:59Z'); 
+            }
 
             const postData = {
                 title,
+                price: isOwnPrice ? 'Make an offer' : price,
+                isOwnPrice,
                 address,
                 description,
                 startTime,
@@ -229,6 +245,7 @@ export default function FormScreen() {
                 images: finalImages,
                 latitude: location.latitude,
                 longitude: location.longitude,
+                daysOpen: selectedDays,
             };
 
             if (isEditMode) {
@@ -280,6 +297,7 @@ export default function FormScreen() {
             <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
                 <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: 50 }}>
                     
+
                     <View style={styles.imagepicker}>
                         {images.length > 0 ? (
                             <View style={{ width: '100%', height: '100%' }}>
@@ -291,7 +309,7 @@ export default function FormScreen() {
                                     keyExtractor={(item, index) => index.toString()}
                                     renderItem={({ item, index }) => (
                                         <View style={{ width: imageWidth, height: '100%' }}>
-                                            <Image source={{ uri: item }} style={{ width: '100%', height: '100%', resizeMode: 'cover' }} />
+                                            <Image source={{ uri: item }} style={{ width: '100%', height: '100%', resizeMode: 'cover', borderRadius: 12 }} />
                                             <Pressable style={styles.deleteImageButton} onPress={() => removeImage(index)}>
                                                 <Ionicons name="trash-outline" size={20} color="white" />
                                             </Pressable>
@@ -300,11 +318,10 @@ export default function FormScreen() {
                                 />
                                 <Pressable onPress={handleAddPhoto} style={styles.editPhotoButton}>
                                     <Ionicons name="camera" size={20} color="white" />
-                                    <Text style={styles.editPhotoText}>Edit</Text>
+                                    <Text style={styles.editPhotoText}>Add More</Text>
                                 </Pressable>
                             </View>
                         ) : (
-                            
                             <Pressable onPress={handleAddPhoto} style={styles.placeholderContainer}>
                                 <Ionicons name="camera-outline" size={40} color="#1A3C40" />
                                 <Text style={styles.placeholderText}>Add photos</Text>
@@ -312,11 +329,60 @@ export default function FormScreen() {
                         )}
                     </View>
 
+                    {/*Item section */}
+                    <View style={styles.sectionHeader}>
+                        <Ionicons name="information-circle-outline" size={20} color="#1A3C40" />
+                        <Text style={styles.sectionTitle}>Item Details</Text>
+                    </View>
+
                     <Text style={styles.label}>Title</Text>
-                    <TextInput style={styles.input} placeholder="e.g. Mega sale" value={title} onChangeText={setTitle} />
+                    <TextInput style={styles.input} placeholder="e.g. Vintage Leather Couch" value={title} onChangeText={setTitle} />
                     
-                    <Text style={styles.label}>Address</Text>
-                    <View style={{ zIndex: 1 }}>
+                    <View style={styles.row}>
+                        <View style={{ flex: 1, marginRight: 15 }}>
+                            <Text style={styles.label}>Price ($)</Text>
+                            <TextInput 
+                                style={[styles.input, isOwnPrice && { backgroundColor: '#f0f0f0', color: '#aaa' }]} 
+                                placeholder="0.00" 
+                                keyboardType="numeric"
+                                value={price} 
+                                onChangeText={setPrice} 
+                                editable={!isOwnPrice}
+                            />
+                        </View>
+                        <View style={{ flex: 1, alignItems: 'flex-start', justifyContent: 'center', paddingTop: 10 }}>
+                            <Text style={[styles.label, {marginBottom: 4}]}>Name your price</Text>
+                            <Switch 
+                                value={isOwnPrice} 
+                                onValueChange={(val) => {
+                                    setIsOwnPrice(val);
+                                    if (val) setPrice('');
+                                }} 
+                                trackColor={{ false: '#e0e0e0', true: '#1A3C40' }}
+                            />
+                        </View>
+                    </View>
+
+                    <Text style={styles.label}>Description</Text>
+                    <View>
+                        <TextInput 
+                            style={[styles.input, styles.textArea]} 
+                            placeholder="Condition, history, dimensions, etc." 
+                            value={description} 
+                            onChangeText={setDescription} 
+                            multiline 
+                            maxLength={500}
+                        />
+                        <Text style={styles.charCount}>{description.length}/500</Text>
+                    </View>
+
+                    {/* location */}
+                    <View style={styles.sectionHeader}>
+                        <Ionicons name="location-outline" size={20} color="#1A3C40" />
+                        <Text style={styles.sectionTitle}>Location</Text>
+                    </View>
+                    
+                    <View style={{ zIndex: 1, marginBottom: 20 }}>
                         <GooglePlacesAutocomplete
                             ref={googlePlacesRef}
                             placeholder="e.g. 123 sunset blv."
@@ -324,9 +390,9 @@ export default function FormScreen() {
                             disableScroll={true}
                             textInputProps={{ 
                                 onChangeText: (text) => {
-                                setAddress(text);
-                                setIsAddressValid(false);
-                            },
+                                    setAddress(text);
+                                    if (text.length > 5) setIsAddressValid(true);
+                                },
                                 value: address
                             }}
                             onPress={(data, details = null) => {
@@ -349,31 +415,44 @@ export default function FormScreen() {
                             }}
                         />
                     </View>
-                    
-                    <Text style={styles.label}>Description</Text>
-                    <View>
-                        <TextInput 
-                            style={[styles.input, styles.textArea]} 
-                            placeholder="What are you selling?" 
-                            value={description} 
-                            onChangeText={setDescription} 
-                            multiline 
-                            maxLength={500}
-                        />
-                        <Text style={styles.charCount}>
-                            {description.length}/500
-                        </Text>
+
+                    {/* event option */}
+                    <View style={styles.sectionHeader}>
+                        <Ionicons name="calendar-outline" size={20} color="#1A3C40" />
+                        <Text style={styles.sectionTitle}>Yard Sale Details (Optional)</Text>
                     </View>
 
-                    <Text style={styles.label}>Post Longevity (Days)</Text>
+                    <Text style={styles.label}>Post Longevity (optional)</Text>
                     <View style={styles.longevityContainer}>
                         {longevityOptions.map((option) => (
-                            <Pressable key={option} onPress={() => setLongevity(option)} style={[styles.longevityInput, longevity === option && styles.longevityInputActive]}>
+                            <Pressable 
+                                key={option} 
+                                onPress={() => setLongevity(longevity === option ? null : option)} 
+                                style={[styles.longevityInput, longevity === option && styles.longevityInputActive]}
+                            >
                                 <Text style={[styles.longevityText, longevity === option && styles.longevityTextActive]}>
                                     {option} {option === 1 ? 'Day' : 'Days'}
                                 </Text>
                             </Pressable>
                         ))}
+                    </View>
+
+                    <Text style={styles.label}>Days Open</Text>
+                    <View style={styles.daysContainer}>
+                        {daysOfWeek.map((day) => {
+                            const isSelected = selectedDays.includes(day);
+                            return (
+                                <Pressable 
+                                    key={day} 
+                                    onPress={() => toggleDay(day)}
+                                    style={[styles.dayBubble, isSelected && styles.dayBubbleActive]}
+                                >
+                                    <Text style={[styles.dayText, isSelected && styles.dayTextActive]}>
+                                        {day}
+                                    </Text>
+                                </Pressable>
+                            );
+                        })}
                     </View>
 
                     <View style={styles.row}>
@@ -399,6 +478,7 @@ export default function FormScreen() {
                         <DateTimePicker value={tempDate} mode="time" display="default" onChange={(e, date) => { setShowEndPicker(false); if (date) setEndTime(formatTime(date)); }} />
                     )}
 
+                    {/* POST BUTTON */}
                     <Pressable style={styles.postButton} onPress={handleSavePost} disabled={saving}>
                         {saving ? (
                             <ActivityIndicator color="white" />
@@ -416,6 +496,8 @@ const styles = StyleSheet.create({
     container: {flex: 1, backgroundColor: 'white', padding: 20, paddingTop: 50},
     header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
     headerTitle: { fontSize: 20, fontWeight: 'bold'},
+    sectionHeader: { flexDirection: 'row', alignItems: 'center', marginTop: 25, marginBottom: 10, borderBottomWidth: 1, borderBottomColor: '#eee', paddingBottom: 8 },
+    sectionTitle: { fontSize: 18, fontWeight: 'bold', color: '#1A3C40', marginLeft: 8 },
 
     imagepicker:{
         width: '100%', 
@@ -428,7 +510,8 @@ const styles = StyleSheet.create({
         alignItems: 'center', 
         borderWidth: 1, 
         borderColor: '#ddd', 
-        borderStyle: 'dashed' },
+        borderStyle: 'solid'
+    },
     placeholderContainer: { flex: 1, justifyContent: 'center', alignItems: 'center'},
     editPhotoButton: { 
         position: 'absolute', 
@@ -438,7 +521,8 @@ const styles = StyleSheet.create({
         alignItems: 'center', 
         paddingHorizontal: 16, 
         paddingVertical: 8, 
-        borderRadius: 20 },
+        borderRadius: 20 
+    },
     editPhotoText: { color: 'white', fontWeight: 'bold', marginLeft: 6 },
     deleteImageButton: { position: 'absolute', top: 10, right: 10, backgroundColor: '#f508088a', padding: 8, borderRadius: 20 },
 
@@ -447,7 +531,8 @@ const styles = StyleSheet.create({
     input: { borderWidth: 1, borderColor: '#ddd', padding: 14, borderRadius: 12, backgroundColor: '#f9f9f9', fontSize: 16 },
     textArea: { height: 100, textAlignVertical: 'top' },
     charCount: { textAlign: 'right', fontSize: 12, color: '#888', marginTop: 4, marginRight: 4 },
-    row: {flexDirection: 'row'},
+    
+    row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
 
     longevityContainer: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 5 },
     longevityInput: {
@@ -458,11 +543,37 @@ const styles = StyleSheet.create({
         borderWidth: 1, 
         borderColor: '#ddd', 
         backgroundColor: '#f9f9f9', 
-        alignItems: 'center' },
+        alignItems: 'center' 
+    },
     longevityInputActive: { backgroundColor: '#1A3C40', borderColor: '#1A3C40' },
     longevityText: { color: '#666', fontWeight: '500' },
     longevityTextActive: { color: 'white', fontWeight: 'bold' }, 
 
     postButton: { backgroundColor: '#1A3C40', padding: 16, borderRadius: 12, marginTop: 30, alignItems: 'center' },
     postButtonText: {color: 'white', fontWeight: 'bold', fontSize: 16 },
+
+    daysContainer: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        marginVertical: 10,
+    },
+    dayBubble: {
+        width: 40,
+        height: 40,
+        borderRadius: 20,
+        backgroundColor: '#e0e0e0',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    dayBubbleActive: {
+        backgroundColor: '#1A3C40',
+    },
+    dayText: {
+        fontSize: 14,
+        color: '#555',
+    },
+    dayTextActive: {
+        color: 'white',
+        fontWeight: 'bold',
+    },
 });
