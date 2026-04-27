@@ -45,7 +45,8 @@ export default function RegisterScreen() {
           <Text style={registerStyles.title}>Create Account</Text>
           
           <TextInput 
-            placeholder="Username" 
+            placeholder="Username"
+            placeholderTextColor="#888888"
             style={registerStyles.input} 
             onChangeText={setUsername}
             autoCapitalize='none'  
@@ -53,6 +54,7 @@ export default function RegisterScreen() {
 
           <TextInput 
             placeholder="Email"
+            placeholderTextColor="#888888"
             style={registerStyles.input}
             autoCapitalize='none'
             onChangeText={setEmail}
@@ -61,6 +63,7 @@ export default function RegisterScreen() {
           <View style={registerStyles.passwordContainer}>
             <TextInput
               placeholder="Password"
+              placeholderTextColor="#888888"
               secureTextEntry={!isPasswordVisible}
               style={registerStyles.passwordInput}
               onChangeText={setPassword}

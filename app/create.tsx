@@ -106,31 +106,48 @@ export default function FormScreen() {
         if (isEditMode) return; 
 
         (async () => {
-            let { status } = await Location.requestForegroundPermissionsAsync();
-            if (status !== 'granted') {
-                Alert.alert('Permission Denied', 'We need location access to accurately place your sale.');
-                return;
-            }
-            let currentLocation = await Location.getCurrentPositionAsync({});
-            const { latitude, longitude } = currentLocation.coords;
+            try {
+                const { status: existingStatus } = await Location.getForegroundPermissionsAsync();
+                
+                let finalStatus = existingStatus;
 
-            setLocation({
-                latitude, longitude, latitudeDelta: 0.01, longitudeDelta: 0.01,
-            });
-            let geocode = await Location.reverseGeocodeAsync({ latitude, longitude });
-            if (geocode.length > 0) {
-                const place = geocode[0];
-                const streetInfo = `${place.streetNumber || ''} ${place.street || ''}`.trim();
-                const cityState = `${place.city || ''}, ${place.region || ''}`.trim();
+                if (existingStatus !== 'granted') {
+                    const { status } = await Location.requestForegroundPermissionsAsync();
+                    finalStatus = status;
+                }
 
-                if (streetInfo && cityState) {
-                    const fullAddress = `${streetInfo}, ${cityState}`;
-                    setAddress(fullAddress);
-                    setIsAddressValid(true);
-                    if (googlePlacesRef.current) {
-                        googlePlacesRef.current.setAddressText(fullAddress);
+                if (finalStatus !== 'granted') {
+                    Alert.alert(
+                        'Permission Denied', 
+                        'We need location access to place your sale. Please enable it in your phone settings.'
+                    );
+                    return;
+                }
+
+                let currentLocation = await Location.getCurrentPositionAsync({});
+                const { latitude, longitude } = currentLocation.coords;
+
+                setLocation({
+                    latitude, longitude, latitudeDelta: 0.01, longitudeDelta: 0.01,
+                });
+                
+                let geocode = await Location.reverseGeocodeAsync({ latitude, longitude });
+                if (geocode.length > 0) {
+                    const place = geocode[0];
+                    const streetInfo = `${place.streetNumber || ''} ${place.street || ''}`.trim();
+                    const cityState = `${place.city || ''}, ${place.region || ''}`.trim();
+
+                    if (streetInfo && cityState) {
+                        const fullAddress = `${streetInfo}, ${cityState}`;
+                        setAddress(fullAddress);
+                        setIsAddressValid(true);
+                        if (googlePlacesRef.current) {
+                            googlePlacesRef.current.setAddressText(fullAddress);
+                        }
                     }
                 }
+            } catch (error) {
+                console.log("Location error:", error);
             }
         })();
     }, [isEditMode]);
@@ -329,7 +346,6 @@ export default function FormScreen() {
                         )}
                     </View>
 
-                    {/*Item section */}
                     <View style={styles.sectionHeader}>
                         <Ionicons name="information-circle-outline" size={20} color="#1A3C40" />
                         <Text style={styles.sectionTitle}>Item Details</Text>
@@ -376,7 +392,6 @@ export default function FormScreen() {
                         <Text style={styles.charCount}>{description.length}/500</Text>
                     </View>
 
-                    {/* location */}
                     <View style={styles.sectionHeader}>
                         <Ionicons name="location-outline" size={20} color="#1A3C40" />
                         <Text style={styles.sectionTitle}>Location</Text>
@@ -388,13 +403,6 @@ export default function FormScreen() {
                             placeholder="e.g. 123 sunset blv."
                             fetchDetails={true}
                             disableScroll={true}
-                            textInputProps={{ 
-                                onChangeText: (text) => {
-                                    setAddress(text);
-                                    if (text.length > 5) setIsAddressValid(true);
-                                },
-                                value: address
-                            }}
                             onPress={(data, details = null) => {
                                 setAddress(data.description);
                                 setIsAddressValid(true);
@@ -407,7 +415,11 @@ export default function FormScreen() {
                                     });
                                 }
                             }}
-                            query={{ key: process.env.EXPO_PUBLIC_GOOGLE_MAPS_KEY, language: 'en', components: 'country:us' }}
+                            query={{ 
+                                key: process.env.EXPO_PUBLIC_GOOGLE_MAPS_KEY, 
+                                language: 'en', 
+                                components: 'country:us' 
+                            }}
                             styles={{
                                 textInputContainer: { width: '100%' },
                                 textInput: { borderWidth: 1, borderColor: '#ddd', padding: 14, borderRadius: 12, backgroundColor: '#f9f9f9', fontSize: 16, height: 50 },
@@ -416,7 +428,6 @@ export default function FormScreen() {
                         />
                     </View>
 
-                    {/* event option */}
                     <View style={styles.sectionHeader}>
                         <Ionicons name="calendar-outline" size={20} color="#1A3C40" />
                         <Text style={styles.sectionTitle}>Yard Sale Details (Optional)</Text>
@@ -478,7 +489,6 @@ export default function FormScreen() {
                         <DateTimePicker value={tempDate} mode="time" display="default" onChange={(e, date) => { setShowEndPicker(false); if (date) setEndTime(formatTime(date)); }} />
                     )}
 
-                    {/* POST BUTTON */}
                     <Pressable style={styles.postButton} onPress={handleSavePost} disabled={saving}>
                         {saving ? (
                             <ActivityIndicator color="white" />

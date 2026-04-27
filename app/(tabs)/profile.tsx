@@ -28,37 +28,70 @@ export default function ProfileScreen() {
     const [activeTab, setActiveTab] = useState<'listings' | 'saved'>('listings');
     const [savedPosts, setSavedPosts] = useState<Sale[]>([]);
 
-    const pickProfileImage = async () => {
-        let result = await ImagePicker.launchImageLibraryAsync({
+    const uploadImageAndUpdateProfile = async (localUri: string) => {
+        if (!auth.currentUser) return;
+        try {
+            const response = await fetch(localUri);
+            const blob = await response.blob();
+            const storage = getStorage();
+            const storageRef = ref(storage, `avatars/${auth.currentUser.uid}`);
+            await uploadBytes(storageRef, blob);
+
+            const downloadUrl = await getDownloadURL(storageRef);
+            await updateProfile(auth.currentUser, { photoURL: downloadUrl });
+            
+            setProfileImage(downloadUrl);
+            Alert.alert("Success", "Profile picture updated successfully!");
+        } catch (error) {
+            console.log("Error updating profile photo:", error);
+            Alert.alert("Error", "Could not upload profile picture.");
+        }
+    };
+
+    const takeProfilePhoto = async () => {
+        const permissionResult = await ImagePicker.requestCameraPermissionsAsync();
+        if (permissionResult.granted === false) {
+            Alert.alert("Permission Denied", "We need camera access to take your profile picture.");
+            return;
+        }
+
+        let result = await ImagePicker.launchCameraAsync({
             mediaTypes: ImagePicker.MediaTypeOptions.Images,
             allowsEditing: true,
             aspect: [1, 1],
-            quality: 1,
+            quality: 0.5,
         });
 
         if (!result.canceled) {
-            const localUri = result.assets[0].uri;
-            
-            if (auth.currentUser) {
-                try {
-                    const response = await fetch(localUri);
-                    const blob = await response.blob();
-                    const storage = getStorage();
-                    const storageRef = ref(storage, `avatars/${auth.currentUser.uid}`);
-                    await uploadBytes(storageRef, blob);
-
-                    const downloadUrl = await getDownloadURL(storageRef);
-                    await updateProfile(auth.currentUser, { photoURL: downloadUrl });
-                    
-                    setProfileImage(downloadUrl);
-                    Alert.alert("Success", "Profile picture updated successfully!");
-                } catch (error) {
-                    console.log("Error updating profile photo:", error);
-                    Alert.alert("Error", "Could not upload profile picture.");
-                }
-            }
+            await uploadImageAndUpdateProfile(result.assets[0].uri);
         }
-    }
+    };
+
+
+    const pickFromGallery = async () => {
+        let result = await ImagePicker.launchImageLibraryAsync({
+            mediaTypes: ImagePicker.MediaTypeOptions.Images,
+            allowsEditing: true,
+            aspect: [1, 1], 
+            quality: 0.5,
+        });
+
+        if (!result.canceled) {
+            await uploadImageAndUpdateProfile(result.assets[0].uri);
+        }
+    };
+
+    const handleProfileImagePress = () => {
+        Alert.alert(
+            "Update Profile Picture",
+            "Choose where to get your picture from",
+            [
+                { text: "Take Photo", onPress: takeProfilePhoto },
+                { text: "Choose from Gallery", onPress: pickFromGallery },
+                { text: "Cancel", style: "cancel" }
+            ]
+        );
+    };
 
     const fetchMyPosts = async () => {
         if (!user) return;
@@ -164,7 +197,7 @@ export default function ProfileScreen() {
     const ProfileHeader = () => (
         <View style={Profilestyle.headerContainer}>
             <Text style={Profilestyle.screenTitle}>Profile</Text>
-            <Pressable onPress={pickProfileImage} style={Profilestyle.avatarContainer}>
+            <Pressable onPress={handleProfileImagePress} style={Profilestyle.avatarContainer}>
                 <View style={Profilestyle.avatar}>
                     {profileImage ? (
                         <Image source={{ uri: profileImage }} style={Profilestyle.avatarImage} />

@@ -1,4 +1,4 @@
-import {View, Text, StyleSheet, ActivityIndicator} from 'react-native';
+import { View, Text, StyleSheet, ActivityIndicator, Linking, Platform, Alert } from 'react-native';
 import MapView, { Marker } from 'react-native-maps';
 import { useLocalSearchParams, useFocusEffect, router } from 'expo-router';
 import { useState, useCallback } from 'react';
@@ -9,6 +9,24 @@ export default function MapScreen() {
     const [sales, setSales] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const { selectedId, lat, lng } = useLocalSearchParams();
+
+    const handleGetDirections = (latitude: number, longitude: number, title: string) => {
+        if (Platform.OS === 'android') return; 
+
+        const safeTitle = title ? title : 'Destination';
+        const encodedTitle = encodeURIComponent(safeTitle);
+        const url = `https://maps.apple.com/?daddr=${latitude},${longitude}&q=${encodedTitle}`;
+
+        Linking.canOpenURL(url)
+            .then(supported => {
+                if (supported) {
+                    Linking.openURL(url);
+                } else {
+                    console.warn("Phone does not support opening this map link.");
+                }
+            })
+            .catch(err => console.error("Error opening map link:", err));
+    };
 
     useFocusEffect(
         useCallback(() => {
@@ -59,9 +77,9 @@ export default function MapScreen() {
                 {sales.map((sale) => {
                     if (!sale.latitude || !sale.longitude) return null;
 
-                    let markerColor = '#1A3C40'; //default color
+                    let markerColor = 'teal'; //default color
                     if (sale.id === selectedId) {
-                        markerColor = 'yellow'; //link from homefeed
+                        markerColor = 'yellow'; //link addr from homefeed
                     } else if (currentUserId && sale.postedBy === currentUserId) {
                         markerColor = 'red' //user own post
                     }
@@ -73,6 +91,7 @@ export default function MapScreen() {
                             title={sale.title}
                             description={sale.description}
                             pinColor={markerColor}
+                            onCalloutPress={() => handleGetDirections(sale.latitude, sale.longitude, sale.title)}
                         />
                     )
 

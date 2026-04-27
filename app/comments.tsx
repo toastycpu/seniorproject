@@ -4,6 +4,7 @@ import { collection, addDoc, query, orderBy, onSnapshot, serverTimestamp, doc, u
 import { db, auth } from '../firebase/firebaseConfig';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 interface Comment {
     id: string;
@@ -112,6 +113,7 @@ export default function CommentsScreen() {
     
     const [replyingTo, setReplyingTo] = useState<Comment | null>(null);
     const [editingComment, setEditingComment] = useState<Comment | null>(null);
+    const insets = useSafeAreaInsets();
 
     useEffect(() => {
         if (!postId) return;
@@ -289,7 +291,7 @@ export default function CommentsScreen() {
                     </View>
                 )}
 
-                <View style={styles.inputContainer}>
+                <View style={[styles.inputContainer, { paddingBottom: Math.max(insets.bottom, 15) }]}>
                     <TextInput
                         style={styles.input}
                         value={newComment}
@@ -404,7 +406,6 @@ const styles = StyleSheet.create({
     inputContainer: {
         flexDirection: 'row',
         padding: 15,
-        paddingBottom: Platform.OS === 'ios' ? 30 : 15,
         alignItems: 'flex-end',
     },
     input: {
