@@ -214,12 +214,14 @@ export default function FormScreen() {
     };
 
     const handleSavePost = async () => {
+        const isYardSale = selectedDays.length > 0;
+
         if (!title || !address || !description || images.length === 0) {
             Alert.alert('Missing Info', 'Please fill out all required fields (Images, Title, Address, Description)');
             return;
         }
-        if (!isOwnPrice && !price) {
-            Alert.alert('Missing Price', 'Please enter a price or select "Name your price".');
+        if (!isYardSale && !isOwnPrice && !price) {
+            Alert.alert('Missing Price', 'Please enter a price or select "Name your price" for your item.');
             return;
         }
         if (address.length < 5) {
@@ -313,8 +315,7 @@ export default function FormScreen() {
 
             <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
                 <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: 50 }}>
-                    
-
+            
                     <View style={styles.imagepicker}>
                         {images.length > 0 ? (
                             <View style={{ width: '100%', height: '100%' }}>
@@ -430,7 +431,7 @@ export default function FormScreen() {
 
                     <View style={styles.sectionHeader}>
                         <Ionicons name="calendar-outline" size={20} color="#1A3C40" />
-                        <Text style={styles.sectionTitle}>Yard Sale Details (Optional)</Text>
+                        <Text style={styles.sectionTitle}>Yard Sale Details</Text>
                     </View>
 
                     <Text style={styles.label}>Post Longevity (optional)</Text>
