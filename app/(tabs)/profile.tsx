@@ -1,5 +1,5 @@
 import { View, Text, Pressable, StyleSheet, FlatList, Image, Alert } from 'react-native';
-import { useCallback, useState } from 'react';
+import { useCallback, useState, useMemo } from 'react';
 import { collection, query, where, getDocs, orderBy, deleteDoc, doc, updateDoc, arrayRemove, arrayUnion } from 'firebase/firestore';
 import { signOut, updateProfile } from 'firebase/auth';
 import { auth, db } from '../../firebase/firebaseConfig';
@@ -11,8 +11,8 @@ import PostDetailModal from '@/components/postpopup'
 import ImageViewing from 'react-native-image-viewing';
 
 interface Sale {
-    id: string,
-    title: string,
+    id: string;
+    title: string;
     address: string;
     image?: string;
     images?: string[];
@@ -23,155 +23,88 @@ interface Sale {
     savedBy?: string[];
 }
 
+
+const isPostExpired = (expiresAt: any) => {
+    if (!expiresAt || expiresAt === 'Permanent' || expiresAt === 'none') return false;
+    const expirationDate = expiresAt.seconds ? new Date(expiresAt.seconds * 1000) : new Date(expiresAt);
+    return expirationDate < new Date();
+};
+
 export default function ProfileScreen() {
     const router = useRouter();
     const user = auth.currentUser;
+
     const [myPosts, setMyPosts] = useState<Sale[]>([]);
-    const [profileImage, setProfileImage] = useState<string | null>(user?.photoURL || null);
-
-    const [activeTab, setActiveTab] = useState<'listings' | 'saved'>('listings');
     const [savedPosts, setSavedPosts] = useState<Sale[]>([]);
-
+    const [activeTab, setActiveTab] = useState<'listings' | 'saved'>('listings');
+    const [profileImage, setProfileImage] = useState<string | null>(user?.photoURL || null);
+    
     const [modalVisible, setModalVisible] = useState(false);
     const [selectedPost, setSelectedPost] = useState<Sale | null>(null);
     const [isViewerVisible, setIsViewerVisible] = useState(false);
     const [viewerImages, setViewerImages] = useState<any[]>([]);
     const [currentImageIndex, setCurrentImageIndex] = useState(0);
 
-    const uploadImageAndUpdateProfile = async (localUri: string) => {
-        if (!auth.currentUser) return;
-        try {
-            const response = await fetch(localUri);
-            const blob = await response.blob();
-            const storage = getStorage();
-            const storageRef = ref(storage, `avatars/${auth.currentUser.uid}`);
-            await uploadBytes(storageRef, blob);
-
-            const downloadUrl = await getDownloadURL(storageRef);
-            await updateProfile(auth.currentUser, { photoURL: downloadUrl });
-
-            setProfileImage(downloadUrl);
-            Alert.alert("Success", "Profile picture updated successfully!");
-        } catch (error) {
-            console.log("Error updating profile photo:", error);
-            Alert.alert("Error", "Could not upload profile picture.");
-        }
-    };
-
-    const takeProfilePhoto = async () => {
-        const permissionResult = await ImagePicker.requestCameraPermissionsAsync();
-        if (permissionResult.granted === false) {
-            Alert.alert("Permission Denied", "We need camera access to take your profile picture.");
-            return;
-        }
-
-        let result = await ImagePicker.launchCameraAsync({
-            mediaTypes: ImagePicker.MediaTypeOptions.Images,
-            allowsEditing: true,
-            aspect: [1, 1],
-            quality: 0.5,
-        });
-
-        if (!result.canceled) {
-            await uploadImageAndUpdateProfile(result.assets[0].uri);
-        }
-    };
-
-    const pickFromGallery = async () => {
-        let result = await ImagePicker.launchImageLibraryAsync({
-            mediaTypes: ImagePicker.MediaTypeOptions.Images,
-            allowsEditing: true,
-            aspect: [1, 1],
-            quality: 0.5,
-        });
-
-        if (!result.canceled) {
-            await uploadImageAndUpdateProfile(result.assets[0].uri);
-        }
-    };
-
-    const handleProfileImagePress = () => {
-        Alert.alert(
-            "Update Profile Picture",
-            "Choose where to get your picture from",
-            [
-                { text: "Take Photo", onPress: takeProfilePhoto },
-                { text: "Choose from Gallery", onPress: pickFromGallery },
-                { text: "Cancel", style: "cancel" }
-            ]
-        );
-    };
-
     const fetchMyPosts = async () => {
         if (!user) return;
         try {
-            const q = query(
-                collection(db, 'sales'),
-                where('postedBy', '==', user.uid),
-                orderBy('createdAt', 'desc')
-            );
+            const q = query(collection(db, 'sales'), where('postedBy', '==', user.uid), orderBy('createdAt', 'desc'));
             const snapshot = await getDocs(q);
-            const posts: Sale[] = snapshot.docs.map((doc) => ({
-                id: doc.id,
-                ...doc.data(),
-            })) as Sale[];
-            setMyPosts(posts);
-        } catch (error) {
-            console.log("Error fetching posts:", error);
-        }
+            setMyPosts(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Sale[]);
+        } catch (error) { console.log("Error fetching posts:", error); }
     };
 
     const fetchSavedPosts = async () => {
-        if (!auth.currentUser) return;
-
+        if (!user) return;
         try {
-            const userId = auth.currentUser.uid;
-            const salesRef = collection(db, 'sales');
-            const q = query(salesRef, where('savedBy', 'array-contains', userId));
-
-            const querySnapshot = await getDocs(q);
-            const savedData = querySnapshot.docs.map((doc) => ({
-                id: doc.id,
-                ...doc.data(),
-            })) as Sale[];
-            setSavedPosts(savedData);
-
-        } catch (error) {
-            console.log("Error fetching saved posts:", error);
-        }
+            const q = query(collection(db, 'sales'), where('savedBy', 'array-contains', user.uid));
+            const snapshot = await getDocs(q);
+            setSavedPosts(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Sale[]);
+        } catch (error) { console.log("Error fetching saved posts:", error); }
     };
 
     useFocusEffect(useCallback(() => {
         fetchMyPosts();
         fetchSavedPosts();
-    }, [])
-    );
+    }, []));
 
-    const handleDeletePost = (id: string) => {
-        Alert.alert(
-            "Delete Post",
-            "Are you sure you want to delete this post? This cannot be undone.",
-            [
-                { text: "Cancel", style: "cancel" },
-                {
-                    text: "Delete",
-                    style: "destructive",
-                    onPress: async () => {
-                        try {
-                            await deleteDoc(doc(db, 'sales', id));
-                            setMyPosts(prevPosts => prevPosts.filter(post => post.id !== id));
-                        } catch (error) {
-                            console.log("Error deleting:", error);
-                            Alert.alert("Error", "Could not delete post.");
-                        }
-                    }
-                }
-            ]
-        );
+    const uploadImageAndUpdateProfile = async (localUri: string) => {
+        if (!user) return;
+        try {
+            const response = await fetch(localUri);
+            const blob = await response.blob();
+            const storage = getStorage();
+            const storageRef = ref(storage, `avatars/${user.uid}`);
+            await uploadBytes(storageRef, blob);
+            const downloadUrl = await getDownloadURL(storageRef);
+            await updateProfile(user, { photoURL: downloadUrl });
+            setProfileImage(downloadUrl);
+            Alert.alert("Success", "Profile picture updated!");
+        } catch (error) { Alert.alert("Error", "Could not upload profile picture."); }
     };
 
-    const handleEditPost = (id: string) => {
-        router.push({ pathname: '/create', params: { id: id } });
+    const handleProfileImagePress = () => {
+        Alert.alert("Update Profile Picture", "Choose a source", [
+            { text: "Take Photo", onPress: async () => {
+                const res = await ImagePicker.launchCameraAsync({ allowsEditing: true, aspect: [1, 1], quality: 0.5 });
+                if (!res.canceled) uploadImageAndUpdateProfile(res.assets[0].uri);
+            }},
+            { text: "Gallery", onPress: async () => {
+                const res = await ImagePicker.launchImageLibraryAsync({ allowsEditing: true, aspect: [1, 1], quality: 0.5 });
+                if (!res.canceled) uploadImageAndUpdateProfile(res.assets[0].uri);
+            }},
+            { text: "Cancel", style: "cancel" }
+        ]);
+    };
+
+    const handleDeletePost = (id: string) => {
+        Alert.alert("Delete Post", "Are you sure? This cannot be undone.", [
+            { text: "Cancel", style: "cancel" },
+            { text: "Delete", style: "destructive", onPress: async () => {
+                await deleteDoc(doc(db, 'sales', id));
+                setMyPosts(prev => prev.filter(p => p.id !== id));
+            }}
+        ]);
     };
 
     const handleLogout = async () => {
@@ -179,115 +112,44 @@ export default function ProfileScreen() {
         router.replace('/');
     };
 
-    const handleRemoveSaved = async (id: string) => {
-        if (!user) return;
-        try {
-            const postRef = doc(db, 'sales', id);
-            await updateDoc(postRef, {
-                savedBy: arrayRemove(user.uid)
-            });
-            setSavedPosts(prevPosts => prevPosts.filter(post => post.id !== id));
-
-            if (selectedPost && selectedPost.id === id) {
-                setSelectedPost({
-                    ...selectedPost,
-                    savedBy: selectedPost.savedBy?.filter(uid => uid !== user.uid) || []
-                });
-            }
-        } catch (error) {
-            console.log("Error removing saved post:", error);
-            Alert.alert("Error", "Could not remove from saved list");
-        }
-    };
-
     const handleLike = async (post: Sale) => {
         if (!user) return;
         const postRef = doc(db, 'sales', post.id);
         const isLiked = post.likedBy?.includes(user.uid);
-
         try {
-            if (isLiked) {
-                await updateDoc(postRef, {
-                    likedBy: arrayRemove(user.uid),
-                    likes: Math.max(0, (post.likes || 0) - 1)
-                });
-            } else {
-                await updateDoc(postRef, {
-                    likedBy: arrayUnion(user.uid),
-                    likes: (post.likes || 0) + 1
-                });
-            }
-
-            if (activeTab === 'listings') fetchMyPosts();
-            else fetchSavedPosts();
-
+            await updateDoc(postRef, {
+                likedBy: isLiked ? arrayRemove(user.uid) : arrayUnion(user.uid),
+                likes: isLiked ? Math.max(0, (post.likes || 0) - 1) : (post.likes || 0) + 1
+            });
+            activeTab === 'listings' ? fetchMyPosts() : fetchSavedPosts();
             if (selectedPost?.id === post.id) {
                 setSelectedPost({
                     ...selectedPost,
-                    likedBy: isLiked
-                        ? selectedPost.likedBy?.filter(id => id !== user.uid)
-                        : [...(selectedPost.likedBy || []), user.uid],
+                    likedBy: isLiked ? selectedPost.likedBy?.filter(id => id !== user.uid) : [...(selectedPost.likedBy || []), user.uid],
                     likes: isLiked ? Math.max(0, (selectedPost.likes || 0) - 1) : (selectedPost.likes || 0) + 1
                 });
             }
-        } catch (error) {
-            console.log("Error updating like: ", error);
-        }
+        } catch (e) { console.log(e); }
     };
 
     const handleSaveFromModal = async (post: Sale) => {
         if (!user) return;
         const isSaved = post.savedBy?.includes(user.uid);
-
-        if (isSaved) {
-            await handleRemoveSaved(post.id);
-        } else {
-
-            try {
-                const postRef = doc(db, 'sales', post.id);
-                await updateDoc(postRef, { savedBy: arrayUnion(user.uid) });
-                fetchMyPosts();
-
-                if (selectedPost?.id === post.id) {
-                    setSelectedPost({
-                        ...selectedPost,
-                        savedBy: [...(selectedPost.savedBy || []), user.uid]
-                    });
-                }
-            } catch (error) {
-                console.log("Error saving post:", error);
+        const postRef = doc(db, 'sales', post.id);
+        try {
+            await updateDoc(postRef, { savedBy: isSaved ? arrayRemove(user.uid) : arrayUnion(user.uid) });
+            fetchSavedPosts(); 
+            fetchMyPosts();
+            if (selectedPost?.id === post.id) {
+                setSelectedPost({
+                    ...selectedPost,
+                    savedBy: isSaved ? selectedPost.savedBy?.filter(id => id !== user.uid) : [...(selectedPost.savedBy || []), user.uid]
+                });
             }
-        }
+        } catch (e) { console.log(e); }
     };
 
-    const getTimeRemaining = (expiresAt: any) => {
-        if (!expiresAt) return 'No Time Limit';
-
-        const expirationDate = expiresAt.seconds
-            ? new Date(expiresAt.seconds * 1000)
-            : new Date(expiresAt);
-
-        const now = new Date();
-        const diffMs = expirationDate.getTime() - now.getTime();
-
-        if (diffMs <= 0) return 'Expired';
-
-        const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-        const diffHours = Math.floor((diffMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-
-        if (diffDays > 0) return `${diffDays}d ${diffHours}h left`;
-        return `${diffHours}h left`;
-    };
-
-    const activePostsCount = myPosts.filter((item) => {
-        if (!item.expiresAt) return true;
-
-        const expirationDate = item.expiresAt.seconds
-            ? new Date(item.expiresAt.seconds * 1000)
-            : new Date(item.expiresAt);
-
-        return expirationDate >= new Date();
-    }).length;
+    const activePostsCount = useMemo(() => myPosts.filter(item => !isPostExpired(item.expiresAt)).length, [myPosts]);
 
     const ProfileHeader = () => (
         <View style={Profilestyle.headerContainer}>
@@ -297,48 +159,33 @@ export default function ProfileScreen() {
                     {profileImage ? (
                         <Image source={{ uri: profileImage }} style={Profilestyle.avatarImage} />
                     ) : (
-                        <Text style={Profilestyle.avatarText}>
-                            {user?.email?.charAt(0).toUpperCase()}
-                        </Text>
+                        <Text style={Profilestyle.avatarText}>{user?.email?.charAt(0).toUpperCase()}</Text>
                     )}
                 </View>
-                <View style={Profilestyle.editIconBadge}>
-                    <Ionicons name="camera" size={14} color="white" />
-                </View>
+                <View style={Profilestyle.editIconBadge}><Ionicons name="camera" size={14} color="white" /></View>
             </Pressable>
 
-            <Text style={Profilestyle.name}>
-                {user?.displayName || "User"}
-            </Text>
+            <Text style={Profilestyle.name}>{user?.displayName || "User"}</Text>
             <Text style={Profilestyle.email}>{user?.email}</Text>
+            
             <View style={Profilestyle.statsContainer}>
                 <Text style={Profilestyle.statNumber}>{activePostsCount}</Text>
                 <Text style={Profilestyle.statLabel}>Active Posts</Text>
             </View>
+
             <Pressable style={Profilestyle.logoutButton} onPress={handleLogout}>
                 <Text style={Profilestyle.logoutText}>Log Out</Text>
             </Pressable>
 
             <View style={Profilestyle.divider} />
             <View style={Profilestyle.tabContainer}>
-                <Pressable
-                    style={[Profilestyle.tabButton, activeTab === 'listings' && Profilestyle.activeTab]}
-                    onPress={() => setActiveTab('listings')}
-                >
+                <Pressable style={[Profilestyle.tabButton, activeTab === 'listings' && Profilestyle.activeTab]} onPress={() => setActiveTab('listings')}>
                     <Ionicons name="grid-outline" size={20} color={activeTab === 'listings' ? '#1A3C40' : '#888'} />
-                    <Text style={[Profilestyle.tabText, activeTab === 'listings' && Profilestyle.activeTabText]}>
-                        My Listings
-                    </Text>
+                    <Text style={[Profilestyle.tabText, activeTab === 'listings' && Profilestyle.activeTabText]}>My Listings</Text>
                 </Pressable>
-
-                <Pressable
-                    style={[Profilestyle.tabButton, activeTab === 'saved' && Profilestyle.activeTab]}
-                    onPress={() => setActiveTab('saved')}
-                >
+                <Pressable style={[Profilestyle.tabButton, activeTab === 'saved' && Profilestyle.activeTab]} onPress={() => setActiveTab('saved')}>
                     <Ionicons name="bookmark-outline" size={20} color={activeTab === 'saved' ? '#1A3C40' : '#888'} />
-                    <Text style={[Profilestyle.tabText, activeTab === 'saved' && Profilestyle.activeTabText]}>
-                        Saved
-                    </Text>
+                    <Text style={[Profilestyle.tabText, activeTab === 'saved' && Profilestyle.activeTabText]}>Saved</Text>
                 </Pressable>
             </View>
         </View>
@@ -354,80 +201,55 @@ export default function ProfileScreen() {
                 showsVerticalScrollIndicator={false}
                 ListEmptyComponent={
                     <Text style={Profilestyle.emptyText}>
-                        {activeTab === 'listings'
-                            ? "You haven't posted anything yet."
-                            : "You haven't saved any posts yet."}
+                        {activeTab === 'listings' ? "No listings yet." : "No saved posts yet."}
                     </Text>
                 }
                 renderItem={({ item }) => {
-                    const isExpired = item.expiresAt && (
-                        item.expiresAt.seconds
-                            ? new Date(item.expiresAt.seconds * 1000)
-                            : new Date(item.expiresAt)
-                    ) < new Date();
-
+                    const expired = isPostExpired(item.expiresAt);
                     return (
-                        <Pressable
-                            onPress={() => {
-                                setSelectedPost(item);
-                                setModalVisible(true);
-                            }}
-                        >
-                            <View style={[Profilestyle.card, isExpired && { opacity: 0.7 }]}>
-                                <Image
-                                    source={{ uri: item.images && item.images.length > 0 ? item.images[0] : item.image }}
-                                    style={Profilestyle.image}
-                                />
+                        <Pressable onPress={() => { setSelectedPost(item); setModalVisible(true); }}>
+                            <View style={[Profilestyle.card, expired && { opacity: 0.7 }]}>
+                                <Image source={{ uri: item.images?.[0] || item.image }} style={Profilestyle.image} />
                                 <View style={Profilestyle.cardContent}>
                                     <View style={Profilestyle.titleRow}>
                                         <View style={{ flex: 1, paddingRight: 10 }}>
                                             <Text style={Profilestyle.cardTitle}>{item.title}</Text>
                                             <Text style={Profilestyle.cardAddress}>{item.address}</Text>
-
-
-                                            {isExpired && (
+                                            {expired && (
                                                 <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}>
                                                     <Ionicons name="warning" size={16} color="#d32f2f" style={{ marginRight: 4 }} />
-                                                    <Text style={{ color: '#d32f2f', fontWeight: 'bold' }}>
-                                                        This post has expired
-                                                    </Text>
+                                                    <Text style={{ color: '#d32f2f', fontWeight: 'bold' }}>Expired</Text>
                                                 </View>
                                             )}
                                         </View>
-                                        {activeTab === 'listings' && (
-                                            <View style={Profilestyle.editDeleteContainer}>
-                                                <Pressable onPress={(e) => { e.stopPropagation(); handleEditPost(item.id); }} style={{ marginRight: 15 }}>
-                                                    <Ionicons name="pencil" size={20} color="#4CAF50" />
-                                                </Pressable>
-                                                <Pressable onPress={(e) => { e.stopPropagation(); handleDeletePost(item.id); }}>
-                                                    <Ionicons name="trash-outline" size={20} color="#ff4444" />
-                                                </Pressable>
-                                            </View>
-                                        )}
-                                        {activeTab === 'saved' && (
-                                            <View style={Profilestyle.editDeleteContainer}>
-                                                <Pressable onPress={(e) => { e.stopPropagation(); handleRemoveSaved(item.id); }}>
+                                        
+                                        <View style={Profilestyle.editDeleteContainer}>
+                                            {activeTab === 'listings' ? (
+                                                <>
+                                                    <Pressable onPress={(e) => { e.stopPropagation(); router.push({ pathname: '/create', params: { id: item.id } }); }} style={{ marginRight: 15 }}>
+                                                        <Ionicons name="pencil" size={20} color="#4CAF50" />
+                                                    </Pressable>
+                                                    <Pressable onPress={(e) => { e.stopPropagation(); handleDeletePost(item.id); }}>
+                                                        <Ionicons name="trash-outline" size={20} color="#ff4444" />
+                                                    </Pressable>
+                                                </>
+                                            ) : (
+                                                <Pressable onPress={(e) => { e.stopPropagation(); handleSaveFromModal(item); }}>
                                                     <Ionicons name="bookmark" size={24} color="#1A3C40" />
                                                 </Pressable>
-                                            </View>
-                                        )}
+                                            )}
+                                        </View>
                                     </View>
 
-
                                     <View style={Profilestyle.actionRow}>
-                                        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                                            <View style={Profilestyle.likesContainer}>
-                                                <Ionicons name="heart-outline" size={23} color="#1A3C40" />
-                                                <Text style={Profilestyle.actionText}>{item.likes || 0}</Text>
-                                            </View>
-                                            <Pressable
-                                                onPress={(e) => { e.stopPropagation(); router.push(`/comments?postId=${item.id}`); }}
-                                                style={{ flexDirection: 'row', alignItems: 'center', marginLeft: 15 }}
-                                            >
-                                                <Ionicons name="chatbubble-outline" size={20} color="#1A3C40" />
-                                                <Text style={Profilestyle.actionText}>Comment</Text>
-                                            </Pressable>
+                                        <View style={Profilestyle.likesContainer}>
+                                            <Ionicons name="heart-outline" size={23} color="#1A3C40" />
+                                            <Text style={Profilestyle.actionText}>{item.likes || 0}</Text>
                                         </View>
+                                        <Pressable onPress={(e) => { e.stopPropagation(); router.push(`/comments?postId=${item.id}`); }} style={{ flexDirection: 'row', alignItems: 'center', marginLeft: 15 }}>
+                                            <Ionicons name="chatbubble-outline" size={20} color="#1A3C40" />
+                                            <Text style={Profilestyle.actionText}>Comment</Text>
+                                        </Pressable>
                                     </View>
                                 </View>
                             </View>
@@ -435,13 +257,11 @@ export default function ProfileScreen() {
                     );
                 }}
             />
+
             <PostDetailModal
                 visible={modalVisible}
                 post={selectedPost}
-                onClose={() => {
-                    setModalVisible(false);
-                    setSelectedPost(null);
-                }}
+                onClose={() => { setModalVisible(false); setSelectedPost(null); }}
                 auth={auth}
                 router={router}
                 handleLike={handleLike}
