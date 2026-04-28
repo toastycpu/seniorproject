@@ -60,7 +60,7 @@ export default function LoginScreen() {
         >
           <View style={logstyle.container}>
             <Text style={logstyle.title}>ReFind</Text>
-            <Text style={logstyle.subtitle}>Your next Treasure</Text>
+            <Text style={logstyle.subtitle}>Reduce waste. Shop localy. Connect with your community</Text>
 
             <TextInput
               placeholder="Email"

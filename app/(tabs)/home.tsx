@@ -1,9 +1,9 @@
-import { View, Text, Image, StyleSheet, FlatList, Pressable, Dimensions, RefreshControl, Alert } from 'react-native';
-import { useState, useCallback } from 'react';
-import { collection, getDocs, query, orderBy, where, doc, updateDoc, arrayUnion, arrayRemove, increment } from 'firebase/firestore';
+import { View, Text, Image, StyleSheet, FlatList, Pressable, Dimensions, RefreshControl, Alert, Modal, ScrollView } from 'react-native';
+import { useState, useCallback} from 'react';
+import { collection, getDocs, query, where, doc, updateDoc, arrayUnion, arrayRemove, increment } from 'firebase/firestore';
 import { db, auth } from '../../firebase/firebaseConfig';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter, useFocusEffect } from 'expo-router';
+import { useRouter,useFocusEffect } from 'expo-router';
 import ImageViewing from 'react-native-image-viewing';
 
 const { width: screenWidth } = Dimensions.get('window');
@@ -54,7 +54,7 @@ export default function HomeScreen(){
         try {
             const now = new Date();
             const salesRef = collection(db, 'sales');
-            const q = query(salesRef, where('expiresAt', '>', now), orderBy('createdAt', 'asc'));
+            const q = query(salesRef, where('expiresAt', '>', now));
             const querySnapshot = await getDocs(q);
             
             const salesData: Sale[] = querySnapshot.docs.map((doc)=> ({
@@ -197,7 +197,6 @@ export default function HomeScreen(){
                         ? item.images.map(img => ({ uri: img })) 
                         : item.image ? [{ uri: item.image }] : [];
 
-
                     const hasTime = item.startTime && item.endTime;
                     const hasDays = Array.isArray(item.daysOpen) && item.daysOpen.length > 0;
                     const isYardSaleEvent = hasTime || hasDays;
@@ -265,12 +264,10 @@ export default function HomeScreen(){
                             ) : null}
 
                             <View style={homestyle.cardContent}>
-                                {/* Adjusted marginBottom here to keep spacing even */}
                                 <Text style={[homestyle.title, { marginBottom: 4, fontSize: 18, fontWeight: 'bold' }]}>
                                     {item.title}
                                 </Text>
                                 
-                                {/* --- NEW PRICE DISPLAY BLOCK --- */}
                                 <View style={{ marginBottom: 12 }}>
                                     {item.isOwnPrice ? (
                                         <Text style={{ fontSize: 16, fontWeight: 'bold', color: '#1A3C40' }}>
@@ -283,7 +280,6 @@ export default function HomeScreen(){
                                     ) : null}
                                 </View>
 
-                                
                                 {isYardSaleEvent && (
                                     <View style={{ backgroundColor: '#f4f6f6', padding: 10, borderRadius: 8, marginBottom: 12 }}>
                                         {hasDays && (
@@ -369,15 +365,13 @@ export default function HomeScreen(){
                 imageIndex={currentImageIndex}
                 visible={isViewerVisible}
                 onRequestClose={() => setIsViewerVisible(false)}
-                swipeToCloseEnabled={true}
-                doubleTapToZoomEnabled={true}
             />
         </View>
     );
 }
 
 const homestyle = StyleSheet.create({
-    container: { flex: 1, justifyContent: 'center', padding: 20},
+    container: { flex: 1, justifyContent: 'center', padding: 20, backgroundColor:'#f7f2ed'},
     headercontainer:{
         flexDirection: 'row',
         justifyContent: 'space-between',
@@ -389,7 +383,7 @@ const homestyle = StyleSheet.create({
     header: {
         fontSize: 35,
         fontWeight: 'bold',
-        color: '#1A3C40'
+        color: '#666859'
     },
     button: {
         backgroundColor: '#485b5d', 
@@ -404,9 +398,8 @@ const homestyle = StyleSheet.create({
         marginBottom: 15,
         elevation: 4,
         shadowColor: '#000',
-        shadowOffset: {width: 0, height: 5},
         shadowOpacity: 0.15,
-        shadowRadius: 5,
+        shadowRadius: 15,
     },
     cardHeader: {
         flexDirection: 'row',
@@ -493,7 +486,4 @@ const homestyle = StyleSheet.create({
         paddingVertical: 12,
         borderRadius: 25,
     },
-    modalContainer: { flex: 1, backgroundColor: 'rgba(0, 0, 0, 0.9)', justifyContent: 'center', alignItems: 'center' },
-    closeButton: { position: 'absolute', top: 50, right: 20, zIndex: 1 },
-    fullScreenImage: { width: '100%', height: '80%' }
 });

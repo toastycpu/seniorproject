@@ -1,12 +1,14 @@
 import { View, Text, Pressable, StyleSheet, FlatList, Image, Alert } from 'react-native';
 import { useCallback, useState } from 'react';
-import { collection, query, where, getDocs, orderBy, deleteDoc, doc, updateDoc, arrayRemove } from 'firebase/firestore';
+import { collection, query, where, getDocs, orderBy, deleteDoc, doc, updateDoc, arrayRemove, arrayUnion } from 'firebase/firestore';
 import { signOut, updateProfile } from 'firebase/auth';
 import { auth, db } from '../../firebase/firebaseConfig';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import PostDetailModal from '@/components/postpopup'
+import ImageViewing from 'react-native-image-viewing';
 
 interface Sale {
     id: string,
@@ -17,6 +19,8 @@ interface Sale {
     likes: number;
     description: string;
     expiresAt?: any;
+    likedBy?: string[];
+    savedBy?: string[];
 }
 
 export default function ProfileScreen() {
@@ -27,6 +31,12 @@ export default function ProfileScreen() {
 
     const [activeTab, setActiveTab] = useState<'listings' | 'saved'>('listings');
     const [savedPosts, setSavedPosts] = useState<Sale[]>([]);
+
+    const [modalVisible, setModalVisible] = useState(false);
+    const [selectedPost, setSelectedPost] = useState<Sale | null>(null);
+    const [isViewerVisible, setIsViewerVisible] = useState(false);
+    const [viewerImages, setViewerImages] = useState<any[]>([]);
+    const [currentImageIndex, setCurrentImageIndex] = useState(0);
 
     const uploadImageAndUpdateProfile = async (localUri: string) => {
         if (!auth.currentUser) return;
@@ -39,7 +49,7 @@ export default function ProfileScreen() {
 
             const downloadUrl = await getDownloadURL(storageRef);
             await updateProfile(auth.currentUser, { photoURL: downloadUrl });
-            
+
             setProfileImage(downloadUrl);
             Alert.alert("Success", "Profile picture updated successfully!");
         } catch (error) {
@@ -67,12 +77,11 @@ export default function ProfileScreen() {
         }
     };
 
-
     const pickFromGallery = async () => {
         let result = await ImagePicker.launchImageLibraryAsync({
             mediaTypes: ImagePicker.MediaTypeOptions.Images,
             allowsEditing: true,
-            aspect: [1, 1], 
+            aspect: [1, 1],
             quality: 0.5,
         });
 
@@ -114,19 +123,19 @@ export default function ProfileScreen() {
 
     const fetchSavedPosts = async () => {
         if (!auth.currentUser) return;
-        
+
         try {
             const userId = auth.currentUser.uid;
             const salesRef = collection(db, 'sales');
             const q = query(salesRef, where('savedBy', 'array-contains', userId));
-            
+
             const querySnapshot = await getDocs(q);
             const savedData = querySnapshot.docs.map((doc) => ({
                 id: doc.id,
                 ...doc.data(),
             })) as Sale[];
-            setSavedPosts(savedData); 
-            
+            setSavedPosts(savedData);
+
         } catch (error) {
             console.log("Error fetching saved posts:", error);
         }
@@ -172,25 +181,111 @@ export default function ProfileScreen() {
 
     const handleRemoveSaved = async (id: string) => {
         if (!user) return;
-        try{
+        try {
             const postRef = doc(db, 'sales', id);
             await updateDoc(postRef, {
                 savedBy: arrayRemove(user.uid)
             });
             setSavedPosts(prevPosts => prevPosts.filter(post => post.id !== id));
-        }catch (error) {
+
+            if (selectedPost && selectedPost.id === id) {
+                setSelectedPost({
+                    ...selectedPost,
+                    savedBy: selectedPost.savedBy?.filter(uid => uid !== user.uid) || []
+                });
+            }
+        } catch (error) {
             console.log("Error removing saved post:", error);
             Alert.alert("Error", "Could not remove from saved list");
         }
     };
 
+    const handleLike = async (post: Sale) => {
+        if (!user) return;
+        const postRef = doc(db, 'sales', post.id);
+        const isLiked = post.likedBy?.includes(user.uid);
+
+        try {
+            if (isLiked) {
+                await updateDoc(postRef, {
+                    likedBy: arrayRemove(user.uid),
+                    likes: Math.max(0, (post.likes || 0) - 1)
+                });
+            } else {
+                await updateDoc(postRef, {
+                    likedBy: arrayUnion(user.uid),
+                    likes: (post.likes || 0) + 1
+                });
+            }
+
+            if (activeTab === 'listings') fetchMyPosts();
+            else fetchSavedPosts();
+
+            if (selectedPost?.id === post.id) {
+                setSelectedPost({
+                    ...selectedPost,
+                    likedBy: isLiked
+                        ? selectedPost.likedBy?.filter(id => id !== user.uid)
+                        : [...(selectedPost.likedBy || []), user.uid],
+                    likes: isLiked ? Math.max(0, (selectedPost.likes || 0) - 1) : (selectedPost.likes || 0) + 1
+                });
+            }
+        } catch (error) {
+            console.log("Error updating like: ", error);
+        }
+    };
+
+    const handleSaveFromModal = async (post: Sale) => {
+        if (!user) return;
+        const isSaved = post.savedBy?.includes(user.uid);
+
+        if (isSaved) {
+            await handleRemoveSaved(post.id);
+        } else {
+
+            try {
+                const postRef = doc(db, 'sales', post.id);
+                await updateDoc(postRef, { savedBy: arrayUnion(user.uid) });
+                fetchMyPosts();
+
+                if (selectedPost?.id === post.id) {
+                    setSelectedPost({
+                        ...selectedPost,
+                        savedBy: [...(selectedPost.savedBy || []), user.uid]
+                    });
+                }
+            } catch (error) {
+                console.log("Error saving post:", error);
+            }
+        }
+    };
+
+    const getTimeRemaining = (expiresAt: any) => {
+        if (!expiresAt) return 'No Time Limit';
+
+        const expirationDate = expiresAt.seconds
+            ? new Date(expiresAt.seconds * 1000)
+            : new Date(expiresAt);
+
+        const now = new Date();
+        const diffMs = expirationDate.getTime() - now.getTime();
+
+        if (diffMs <= 0) return 'Expired';
+
+        const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+        const diffHours = Math.floor((diffMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+
+        if (diffDays > 0) return `${diffDays}d ${diffHours}h left`;
+        return `${diffHours}h left`;
+    };
+
     const activePostsCount = myPosts.filter((item) => {
         if (!item.expiresAt) return true;
-        
-        const expirationDate = item.expiresAt.seconds 
-            ? new Date(item.expiresAt.seconds * 1000) 
+
+        const expirationDate = item.expiresAt.seconds
+            ? new Date(item.expiresAt.seconds * 1000)
             : new Date(item.expiresAt);
-            
+
         return expirationDate >= new Date();
     }).length;
 
@@ -226,7 +321,7 @@ export default function ProfileScreen() {
 
             <View style={Profilestyle.divider} />
             <View style={Profilestyle.tabContainer}>
-                <Pressable 
+                <Pressable
                     style={[Profilestyle.tabButton, activeTab === 'listings' && Profilestyle.activeTab]}
                     onPress={() => setActiveTab('listings')}
                 >
@@ -236,7 +331,7 @@ export default function ProfileScreen() {
                     </Text>
                 </Pressable>
 
-                <Pressable 
+                <Pressable
                     style={[Profilestyle.tabButton, activeTab === 'saved' && Profilestyle.activeTab]}
                     onPress={() => setActiveTab('saved')}
                 >
@@ -259,86 +354,115 @@ export default function ProfileScreen() {
                 showsVerticalScrollIndicator={false}
                 ListEmptyComponent={
                     <Text style={Profilestyle.emptyText}>
-                        {activeTab === 'listings' 
-                            ? "You haven't posted anything yet." 
+                        {activeTab === 'listings'
+                            ? "You haven't posted anything yet."
                             : "You haven't saved any posts yet."}
                     </Text>
                 }
                 renderItem={({ item }) => {
                     const isExpired = item.expiresAt && (
-                        item.expiresAt.seconds 
-                            ? new Date(item.expiresAt.seconds * 1000) 
+                        item.expiresAt.seconds
+                            ? new Date(item.expiresAt.seconds * 1000)
                             : new Date(item.expiresAt)
                     ) < new Date();
 
                     return (
-                        <View style={[Profilestyle.card, isExpired && { opacity: 0.7 }]}>
-                            <Image
-                                source={{ uri: item.images && item.images.length > 0 ? item.images[0] : item.image }}
-                                style={Profilestyle.image}
-                            />
-                            <View style={Profilestyle.cardContent}>
-                                <View style={Profilestyle.titleRow}>
-                                    <View style={{ flex: 1, paddingRight: 10 }}>
-                                        <Text style={Profilestyle.cardTitle}>{item.title}</Text>
-                                        <Text style={Profilestyle.cardAddress}>{item.address}</Text>
-                                        
+                        <Pressable
+                            onPress={() => {
+                                setSelectedPost(item);
+                                setModalVisible(true);
+                            }}
+                        >
+                            <View style={[Profilestyle.card, isExpired && { opacity: 0.7 }]}>
+                                <Image
+                                    source={{ uri: item.images && item.images.length > 0 ? item.images[0] : item.image }}
+                                    style={Profilestyle.image}
+                                />
+                                <View style={Profilestyle.cardContent}>
+                                    <View style={Profilestyle.titleRow}>
+                                        <View style={{ flex: 1, paddingRight: 10 }}>
+                                            <Text style={Profilestyle.cardTitle}>{item.title}</Text>
+                                            <Text style={Profilestyle.cardAddress}>{item.address}</Text>
 
-                                        {isExpired && (
-                                            <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}>
-                                                <Ionicons name="warning" size={16} color="#d32f2f" style={{ marginRight: 4 }} />
-                                                <Text style={{ color: '#d32f2f', fontWeight: 'bold' }}>
-                                                    This post has expired
-                                                </Text>
+
+                                            {isExpired && (
+                                                <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}>
+                                                    <Ionicons name="warning" size={16} color="#d32f2f" style={{ marginRight: 4 }} />
+                                                    <Text style={{ color: '#d32f2f', fontWeight: 'bold' }}>
+                                                        This post has expired
+                                                    </Text>
+                                                </View>
+                                            )}
+                                        </View>
+                                        {activeTab === 'listings' && (
+                                            <View style={Profilestyle.editDeleteContainer}>
+                                                <Pressable onPress={(e) => { e.stopPropagation(); handleEditPost(item.id); }} style={{ marginRight: 15 }}>
+                                                    <Ionicons name="pencil" size={20} color="#4CAF50" />
+                                                </Pressable>
+                                                <Pressable onPress={(e) => { e.stopPropagation(); handleDeletePost(item.id); }}>
+                                                    <Ionicons name="trash-outline" size={20} color="#ff4444" />
+                                                </Pressable>
+                                            </View>
+                                        )}
+                                        {activeTab === 'saved' && (
+                                            <View style={Profilestyle.editDeleteContainer}>
+                                                <Pressable onPress={(e) => { e.stopPropagation(); handleRemoveSaved(item.id); }}>
+                                                    <Ionicons name="bookmark" size={24} color="#1A3C40" />
+                                                </Pressable>
                                             </View>
                                         )}
                                     </View>
-                                    {activeTab === 'listings' && (
-                                        <View style={Profilestyle.editDeleteContainer}>
-                                            <Pressable onPress={() => handleEditPost(item.id)} style={{ marginRight: 15 }}>
-                                                <Ionicons name="pencil" size={20} color="#4CAF50" />
-                                            </Pressable>
-                                            <Pressable onPress={() => handleDeletePost(item.id)}>
-                                                <Ionicons name="trash-outline" size={20} color="#ff4444" />
-                                            </Pressable>
-                                        </View>
-                                    )}
-                                    {activeTab === 'saved' && (
-                                        <View style={Profilestyle.editDeleteContainer}>
-                                            <Pressable onPress={() => handleRemoveSaved(item.id)}>
-                                                <Ionicons name="bookmark" size={24} color="#1A3C40" />
-                                            </Pressable>
-                                        </View>
-                                    )}
-                                </View>
 
-                                
-                                <View style={Profilestyle.actionRow}>
-                                    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                                        <View style={Profilestyle.likesContainer}>
-                                            <Ionicons name="heart-outline" size={23} color="#1A3C40" />
-                                            <Text style={Profilestyle.actionText}>{item.likes || 0}</Text>
+
+                                    <View style={Profilestyle.actionRow}>
+                                        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                                            <View style={Profilestyle.likesContainer}>
+                                                <Ionicons name="heart-outline" size={23} color="#1A3C40" />
+                                                <Text style={Profilestyle.actionText}>{item.likes || 0}</Text>
+                                            </View>
+                                            <Pressable
+                                                onPress={(e) => { e.stopPropagation(); router.push(`/comments?postId=${item.id}`); }}
+                                                style={{ flexDirection: 'row', alignItems: 'center', marginLeft: 15 }}
+                                            >
+                                                <Ionicons name="chatbubble-outline" size={20} color="#1A3C40" />
+                                                <Text style={Profilestyle.actionText}>Comment</Text>
+                                            </Pressable>
                                         </View>
-                                        <Pressable
-                                            onPress={() => router.push(`/comments?postId=${item.id}`)}
-                                            style={{ flexDirection: 'row', alignItems: 'center', marginLeft: 15 }}
-                                        >
-                                            <Ionicons name="chatbubble-outline" size={20} color="#1A3C40" />
-                                            <Text style={Profilestyle.actionText}>Comment</Text>
-                                        </Pressable>
                                     </View>
                                 </View>
                             </View>
-                        </View>
+                        </Pressable>
                     );
                 }}
+            />
+            <PostDetailModal
+                visible={modalVisible}
+                post={selectedPost}
+                onClose={() => {
+                    setModalVisible(false);
+                    setSelectedPost(null);
+                }}
+                auth={auth}
+                router={router}
+                handleLike={handleLike}
+                handleSave={handleSaveFromModal}
+                setViewerImages={setViewerImages}
+                setCurrentImageIndex={setCurrentImageIndex}
+                setIsViewerVisible={setIsViewerVisible}
+            />
+
+            <ImageViewing
+                images={viewerImages}
+                imageIndex={currentImageIndex}
+                visible={isViewerVisible}
+                onRequestClose={() => setIsViewerVisible(false)}
             />
         </View>
     );
 }
 
 const Profilestyle = StyleSheet.create({
-    container: { flex: 1, backgroundColor: '#f4f4f4' },
+    container: { flex: 1, backgroundColor: '#f7f2ed' },
     headerContainer: { alignItems: 'center', paddingTop: 60, paddingHorizontal: 20 },
     screenTitle: { fontSize: 24, fontWeight: 'bold', marginBottom: 20, color: '#1A3C40' },
     titleRow: {
@@ -389,17 +513,17 @@ const Profilestyle = StyleSheet.create({
     },
     logoutText: { color: '#d32f2f', fontWeight: '600' },
     divider: { height: 1, width: '100%', backgroundColor: '#ddd', marginBottom: 5 },
-    
+
 
     tabContainer: { flexDirection: 'row', width: '100%', marginBottom: 15 },
-    tabButton: { 
-        flex: 1, 
-        flexDirection: 'row', 
-        justifyContent: 'center', 
-        alignItems: 'center', 
-        paddingVertical: 12, 
-        borderBottomWidth: 2, 
-        borderBottomColor: 'transparent' 
+    tabButton: {
+        flex: 1,
+        flexDirection: 'row',
+        justifyContent: 'center',
+        alignItems: 'center',
+        paddingVertical: 12,
+        borderBottomWidth: 2,
+        borderBottomColor: 'transparent'
     },
     activeTab: { borderBottomColor: '#1A3C40' },
     tabText: { fontSize: 16, fontWeight: '600', color: '#888', marginLeft: 8 },

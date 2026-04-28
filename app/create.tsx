@@ -347,44 +347,14 @@ export default function FormScreen() {
                         )}
                     </View>
 
-                    <View style={styles.sectionHeader}>
-                        <Ionicons name="information-circle-outline" size={20} color="#1A3C40" />
-                        <Text style={styles.sectionTitle}>Item Details</Text>
-                    </View>
-
                     <Text style={styles.label}>Title</Text>
                     <TextInput style={styles.input} placeholder="e.g. Vintage Leather Couch" value={title} onChangeText={setTitle} />
-                    
-                    <View style={styles.row}>
-                        <View style={{ flex: 1, marginRight: 15 }}>
-                            <Text style={styles.label}>Price ($)</Text>
-                            <TextInput 
-                                style={[styles.input, isOwnPrice && { backgroundColor: '#f0f0f0', color: '#aaa' }]} 
-                                placeholder="0.00" 
-                                keyboardType="numeric"
-                                value={price} 
-                                onChangeText={setPrice} 
-                                editable={!isOwnPrice}
-                            />
-                        </View>
-                        <View style={{ flex: 1, alignItems: 'flex-start', justifyContent: 'center', paddingTop: 10 }}>
-                            <Text style={[styles.label, {marginBottom: 4}]}>Name your price</Text>
-                            <Switch 
-                                value={isOwnPrice} 
-                                onValueChange={(val) => {
-                                    setIsOwnPrice(val);
-                                    if (val) setPrice('');
-                                }} 
-                                trackColor={{ false: '#e0e0e0', true: '#1A3C40' }}
-                            />
-                        </View>
-                    </View>
 
                     <Text style={styles.label}>Description</Text>
                     <View>
                         <TextInput 
                             style={[styles.input, styles.textArea]} 
-                            placeholder="Condition, history, dimensions, etc." 
+                            placeholder="Describe your sale or item..." 
                             value={description} 
                             onChangeText={setDescription} 
                             multiline 
@@ -429,11 +399,41 @@ export default function FormScreen() {
                         />
                     </View>
 
+
+                    <View style={styles.sectionHeader}>
+                        <Ionicons name="information-circle-outline" size={20} color="#1A3C40" />
+                        <Text style={styles.sectionTitle}>Item Details</Text>
+                    </View>
+                    <View style={styles.row}>
+                        <View style={{ flex: 1, marginRight: 15 }}>
+                            <Text style={styles.label}>Price ($)</Text>
+                            <TextInput 
+                                style={[styles.input, isOwnPrice && { backgroundColor: '#f0f0f0', color: '#aaa' }]} 
+                                placeholder="0.00" 
+                                keyboardType="numeric"
+                                value={price} 
+                                onChangeText={setPrice} 
+                                editable={!isOwnPrice}
+                            />
+                        </View>
+                        <View style={{ flex: 1, alignItems: 'flex-start', justifyContent: 'center', paddingTop: 10 }}>
+                            <Text style={[styles.label, {marginBottom: 4}]}>Name your price</Text>
+                            <Switch 
+                                value={isOwnPrice} 
+                                onValueChange={(val) => {
+                                    setIsOwnPrice(val);
+                                    if (val) setPrice('');
+                                }} 
+                                trackColor={{ false: '#e0e0e0', true: '#1A3C40' }}
+                            />
+                        </View>
+                    </View>
+
+
                     <View style={styles.sectionHeader}>
                         <Ionicons name="calendar-outline" size={20} color="#1A3C40" />
                         <Text style={styles.sectionTitle}>Yard Sale Details</Text>
                     </View>
-
                     <Text style={styles.label}>Post Longevity (optional)</Text>
                     <View style={styles.longevityContainer}>
                         {longevityOptions.map((option) => (
@@ -470,25 +470,50 @@ export default function FormScreen() {
                     <View style={styles.row}>
                         <View style={{ flex: 1, marginRight: 10 }}>
                             <Text style={styles.label}>Start Time</Text>
-                            <Pressable style={styles.input} onPress={() => setShowStartPicker(true)}>
+                            <Pressable 
+                                style={[styles.input, { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }]} 
+                                onPress={() => setShowStartPicker(true)}
+                            >
                                 <Text style={{ color: startTime ? '#000' : '#999' }}>{startTime || "Select Time"}</Text>
+                                {startTime ? (
+                                    <Pressable onPress={() => setStartTime('')} hitSlop={10}>
+                                        <Ionicons name="close-circle" size={20} color="#999" />
+                                    </Pressable>
+                                ) : null}
                             </Pressable>
+
+                            {showStartPicker && (
+                                <DateTimePicker 
+                                    value={tempDate} 
+                                    mode="time" 
+                                    display="default" 
+                                    onChange={(e, date) => { setShowStartPicker(false); if (date) setStartTime(formatTime(date)); }} 
+                                />
+                            )}
                         </View>
                         <View style={{ flex: 1 }}>
                             <Text style={styles.label}>End Time</Text>
-                            <Pressable style={styles.input} onPress={() => setShowEndPicker(true)}>
+                            <Pressable 
+                                style={[styles.input, { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }]} 
+                                onPress={() => setShowEndPicker(true)}
+                            >
                                 <Text style={{ color: endTime ? '#000' : '#999' }}>{endTime || "Select Time"}</Text>
+                                {endTime ? (
+                                    <Pressable onPress={() => setEndTime('')} hitSlop={10}>
+                                        <Ionicons name="close-circle" size={20} color="#999" />
+                                    </Pressable>
+                                ) : null}
                             </Pressable>
+                            {showEndPicker && (
+                                <DateTimePicker 
+                                    value={tempDate} 
+                                    mode="time" 
+                                    display="default" 
+                                    onChange={(e, date) => { setShowEndPicker(false); if (date) setEndTime(formatTime(date)); }} 
+                                />
+                            )}
                         </View>
                     </View>
-
-                    {showStartPicker && (
-                        <DateTimePicker value={tempDate} mode="time" display="default" onChange={(e, date) => { setShowStartPicker(false); if (date) setStartTime(formatTime(date)); }} />
-                    )}
-                    
-                    {showEndPicker && (
-                        <DateTimePicker value={tempDate} mode="time" display="default" onChange={(e, date) => { setShowEndPicker(false); if (date) setEndTime(formatTime(date)); }} />
-                    )}
 
                     <Pressable style={styles.postButton} onPress={handleSavePost} disabled={saving}>
                         {saving ? (
@@ -580,7 +605,7 @@ const styles = StyleSheet.create({
         backgroundColor: '#1A3C40',
     },
     dayText: {
-        fontSize: 14,
+        fontSize: 13,
         color: '#555',
     },
     dayTextActive: {

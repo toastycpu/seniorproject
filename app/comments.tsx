@@ -239,7 +239,7 @@ export default function CommentsScreen() {
         <KeyboardAvoidingView 
             style={styles.container} 
             behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-            keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
+            keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
         >
             <View style={styles.header}>
                 <Pressable onPress={() => router.back()} style={styles.backButton}>
@@ -318,7 +318,7 @@ export default function CommentsScreen() {
 }
 
 const styles = StyleSheet.create({
-    container: { flex: 1, backgroundColor: '#f4f4f4' },
+    container: { flex: 1, backgroundColor: '#f7f2ed' },
     centered: { justifyContent: 'center', alignItems: 'center' },
     header: {
         flexDirection: 'row',
