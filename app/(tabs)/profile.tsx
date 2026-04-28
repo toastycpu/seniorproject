@@ -9,6 +9,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import PostDetailModal from '@/components/postpopup'
 import ImageViewing from 'react-native-image-viewing';
+import { Stack } from 'expo-router';
 
 interface Sale {
     id: string;
@@ -153,7 +154,6 @@ export default function ProfileScreen() {
 
     const ProfileHeader = () => (
         <View style={Profilestyle.headerContainer}>
-            <Text style={Profilestyle.screenTitle}>Profile</Text>
             <Pressable onPress={handleProfileImagePress} style={Profilestyle.avatarContainer}>
                 <View style={Profilestyle.avatar}>
                     {profileImage ? (
@@ -193,6 +193,23 @@ export default function ProfileScreen() {
 
     return (
         <View style={Profilestyle.container}>
+            <Stack.Screen 
+                options={{
+                    headerShown: true,
+                    headerTitle: "Profile",
+                    headerTitleAlign: 'center',
+                    headerStyle: { 
+                        backgroundColor: '#f7f2ed',
+                    },
+                    headerTitleStyle: {
+                        fontSize: 24,
+                        fontWeight: 'bold',
+                        color: '#1A3C40',
+                    },
+                    headerTintColor: '#fff',
+                    headerShadowVisible: false,
+                }} 
+            />
             <FlatList
                 data={activeTab === 'listings' ? myPosts : savedPosts}
                 keyExtractor={(item) => item.id}
@@ -283,8 +300,7 @@ export default function ProfileScreen() {
 
 const Profilestyle = StyleSheet.create({
     container: { flex: 1, backgroundColor: '#f7f2ed' },
-    headerContainer: { alignItems: 'center', paddingTop: 60, paddingHorizontal: 20 },
-    screenTitle: { fontSize: 24, fontWeight: 'bold', marginBottom: 20, color: '#1A3C40' },
+    headerContainer: { alignItems: 'center', paddingTop: 20, paddingHorizontal: 20 },   
     titleRow: {
         flexDirection: 'row',
         justifyContent: 'space-between',
