@@ -263,7 +263,6 @@ export default function SearchScreen() {
                 router={router}
                 handleLike={handleLike}
                 handleSave={handleSave}
-                getTimeRemaining={getTimeRemaining}
                 setViewerImages={setViewerImages}
                 setCurrentImageIndex={setCurrentImageIndex}
                 setIsViewerVisible={setIsViewerVisible}
