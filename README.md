@@ -1,1 +1,3 @@
 ReFind is an app that allows users to easily find yard, garage, and estate sales or indiviual item in their area without the hassle of driving around or sifting through scattered online posts and street signs. The platform will be community driven, having the users who are hosting the sales share the information directly. On the home feed, users will be able to interact through the posts and comments. It will also include an integrated map view page with pins marking every sale in the user’s area. ReFind will help you search for what you’re looking even before getting into your vehicle.
+
+![App](./ReFind.jpg)
